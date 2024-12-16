@@ -7,4 +7,5 @@ urlpatterns = [
     path('', views.map_view, name='map_view'),
     path('data/', views.stations_data, name='stations_data'),
     path('upload/', views.upload_csv, name='upload_csv'),
+    path('city_data/', views.city_data, name='city_data'),
 ]

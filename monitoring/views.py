@@ -24,6 +24,7 @@ def stations_data(request):
 
     data = []
     for r in records:
+        aqi = calculate_aqi(r.pm25, r.pm10, r.co, r.no2, r.o3)
         data.append({
             'station': r.station.name,
             'timestamp': r.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
@@ -33,9 +34,38 @@ def stations_data(request):
             'no2': r.no2,
             'o3': r.o3,
             'latitude': r.station.latitude,
-            'longitude': r.station.longitude
+            'longitude': r.station.longitude,
+            'aqi': aqi
         })
 
+    return JsonResponse(data, safe=False)
+
+def calculate_aqi(pm25, pm10, co, no2, o3):
+    values = [v for v in [pm25, pm10, co, no2, o3] if v is not None]
+    if not values:
+        return 100
+    base = 100
+    avg = sum(values) / len(values)
+    aqi = base - int(avg * 2)
+    if aqi < 1:
+        aqi = 1
+    elif aqi > 100:
+        aqi = 100
+    return aqi
+
+def city_data(request):
+    city_name = request.GET.get('city')
+    data = []
+    if city_name:
+        station = AirQualityStation.objects.filter(name=city_name).first()
+        if station:
+            records = station.records.all().order_by('timestamp')
+            for r in records:
+                aqi = calculate_aqi(r.pm25, r.pm10, r.co, r.no2, r.o3)
+                data.append({
+                    'timestamp': r.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                    'aqi': aqi
+                })
     return JsonResponse(data, safe=False)
 
 def upload_csv(request):

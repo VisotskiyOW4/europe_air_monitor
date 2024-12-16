@@ -21,6 +21,10 @@
         .info-box {
             font-size: 14px;
         }
+        #aqiChartContainer {
+            margin-top: 20px;
+            display: none; /* сховано поки не вибрано місто */
+        }
     </style>
 </head>
 <body class="d-flex flex-column min-vh-100">
@@ -63,6 +67,13 @@
         <div id="map"></div>
       </div>
     </div>
+
+    <div class="row">
+      <div class="col-12" id="aqiChartContainer">
+        <h3 class="text-center mt-4" id="chartTitle">Динаміка якості повітря</h3>
+        <canvas id="aqiChart" width="400" height="200"></canvas>
+      </div>
+    </div>
   </div>
 </main>
 
@@ -75,6 +86,9 @@
 
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Підключення Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
     var map = L.map('map', {
@@ -95,7 +109,9 @@
     }).addTo(map);
 
     let markers = [];
+    let aqiChart = null; // глобальна змінна для зберігання посилання на графік
 
+    // Функція для завантаження даних без дати
     function loadData(day = '') {
         let url = '/data/';
         if (day) {
@@ -114,6 +130,7 @@
                         const marker = L.marker([station.latitude, station.longitude]).addTo(map);
                         let popupContent = `<div class="info-box">
                             <strong>${station.station || station.name}</strong><br>
+                            Індекс якості повітря (AQI): ${station.aqi ?? 'N/A'}<br>
                             PM2.5: ${station.pm25 ?? 'N/A'} µg/m³<br>
                             PM10: ${station.pm10 ?? 'N/A'} µg/m³<br>
                             CO: ${station.co ?? 'N/A'} ppm<br>
@@ -122,6 +139,13 @@
                             Останнє оновлення: ${station.timestamp ?? 'N/A'}
                         </div>`;
                         marker.bindPopup(popupContent);
+
+                        // Додаємо обробник події кліку по маркеру
+                        marker.on('click', () => {
+                            const cityName = station.station || station.name;
+                            loadCityData(cityName);
+                        });
+
                         markers.push(marker);
                     }
                 });
@@ -129,6 +153,72 @@
             .catch(err => console.error(err));
     }
 
+    // Функція для завантаження історичних даних по місту
+    function loadCityData(city) {
+        fetch('/city_data/?city=' + city)
+            .then(response => response.json())
+            .then(data => {
+                if (data.length === 0) {
+                    // Немає даних - можна сховати графік або вивести повідомлення
+                    document.getElementById('aqiChartContainer').style.display = 'none';
+                    return;
+                }
+
+                // Витягуємо масиви часу та aqi
+                const labels = data.map(item => item.timestamp);
+                const aqiValues = data.map(item => item.aqi);
+
+                // Якщо графік уже існує, знищимо його перед оновленням
+                if (aqiChart) {
+                    aqiChart.destroy();
+                }
+
+                document.getElementById('chartTitle').innerText = `Динаміка якості повітря для ${city}`;
+                document.getElementById('aqiChartContainer').style.display = 'block';
+
+                const ctx = document.getElementById('aqiChart').getContext('2d');
+                aqiChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'AQI',
+                            data: aqiValues,
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            fill: true,
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Час'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Індекс якості повітря (AQI)'
+                                },
+                                min: 0,
+                                max: 100
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(err => console.error(err));
+    }
+    
     // Завантажити дані без дати (поверне пустий список, якщо так реалізовано)
     loadData();
 
