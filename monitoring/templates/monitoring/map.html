@@ -21,9 +21,13 @@
         .info-box {
             font-size: 14px;
         }
-        #aqiChartContainer {
+        /* Ховаємо контейнери графіків поки немає даних */
+        #chartsRow {
             margin-top: 20px;
-            display: none; /* сховано поки не вибрано місто */
+            display: none;
+        }
+        #aqiChartContainer, #pollutantsChartContainer {
+            display: none; /* По замовчуванню сховані, з'являються при наявності даних */
         }
     </style>
 </head>
@@ -68,10 +72,18 @@
       </div>
     </div>
 
-    <div class="row">
-      <div class="col-12" id="aqiChartContainer">
+    <!-- Блок для двох графіків -->
+    <div class="row" id="chartsRow">
+      <!-- Лінійний графік AQI по місту -->
+      <div class="col-md-6" id="aqiChartContainer">
         <h3 class="text-center mt-4" id="chartTitle">Динаміка якості повітря</h3>
         <canvas id="aqiChart" width="400" height="200"></canvas>
+      </div>
+
+      <!-- Стовпчастий графік середніх показників забрудників -->
+      <div class="col-md-6" id="pollutantsChartContainer">
+        <h3 class="text-center mt-4" id="pollutantsChartTitle">Середні показники забрудників</h3>
+        <canvas id="pollutantsBarChart" width="400" height="200"></canvas>
       </div>
     </div>
   </div>
@@ -109,9 +121,10 @@
     }).addTo(map);
 
     let markers = [];
-    let aqiChart = null; // глобальна змінна для зберігання посилання на графік
+    let aqiChart = null; 
+    let pollutantsChart = null; 
 
-    // Функція для завантаження даних без дати
+    // Завантаження даних за день (маркерів)
     function loadData(day = '') {
         let url = '/data/';
         if (day) {
@@ -140,7 +153,7 @@
                         </div>`;
                         marker.bindPopup(popupContent);
 
-                        // Додаємо обробник події кліку по маркеру
+                        // При кліку на місто завантажуємо динаміку AQI
                         marker.on('click', () => {
                             const cityName = station.station || station.name;
                             loadCityData(cityName);
@@ -153,22 +166,21 @@
             .catch(err => console.error(err));
     }
 
-    // Функція для завантаження історичних даних по місту
+    // Завантаження історичних даних для міста (лінійний графік AQI)
     function loadCityData(city) {
         fetch('/city_data/?city=' + city)
             .then(response => response.json())
             .then(data => {
                 if (data.length === 0) {
-                    // Немає даних - можна сховати графік або вивести повідомлення
                     document.getElementById('aqiChartContainer').style.display = 'none';
+                    checkChartsVisibility();
                     return;
                 }
 
-                // Витягуємо масиви часу та aqi
+                // Масиви часу та aqi
                 const labels = data.map(item => item.timestamp);
                 const aqiValues = data.map(item => item.aqi);
 
-                // Якщо графік уже існує, знищимо його перед оновленням
                 if (aqiChart) {
                     aqiChart.destroy();
                 }
@@ -207,19 +219,98 @@
                                 min: 0,
                                 max: 100
                             }
-                        },
-                        plugins: {
-                            legend: {
-                                display: true
+                        }
+                    }
+                });
+                checkChartsVisibility();
+            })
+            .catch(err => console.error(err));
+    }
+
+    // Завантаження середніх показників забрудників за день (стовпчастий графік)
+    function loadPollutantsAverage(day) {
+        let url = '/pollutants_average/';
+        if (day) {
+            url += '?day=' + day;
+        }
+
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                const pm25 = data.pm25 || 0;
+                const pm10 = data.pm10 || 0;
+                const no2 = data.no2 || 0;
+                const o3 = data.o3 || 0;
+                const co = data.co || 0;
+                const selectedDay = data.day || '';
+
+                if (!selectedDay) {
+                    // Якщо день не вибрано або немає даних
+                    document.getElementById('pollutantsChartContainer').style.display = 'none';
+                    checkChartsVisibility();
+                    return;
+                }
+
+                // Оновлюємо стовпчасту діаграму
+                const ctxBar = document.getElementById('pollutantsBarChart').getContext('2d');
+                if (pollutantsChart) {
+                    pollutantsChart.destroy();
+                }
+
+                document.getElementById('pollutantsChartTitle').innerText = `Середні значення за ${selectedDay}`;
+                document.getElementById('pollutantsChartContainer').style.display = 'block';
+
+                pollutantsChart = new Chart(ctxBar, {
+                    type: 'bar',
+                    data: {
+                        labels: ['PM2.5', 'PM10', 'NO2', 'O3', 'CO'],
+                        datasets: [{
+                            label: 'Середні показники',
+                            data: [pm25, pm10, no2, o3, co],
+                            backgroundColor: [
+                                'rgba(255, 99, 132, 0.2)',
+                                'rgba(54, 162, 235, 0.2)',
+                                'rgba(255, 206, 86, 0.2)',
+                                'rgba(75, 192, 192, 0.2)',
+                                'rgba(153, 102, 255, 0.2)'
+                            ],
+                            borderColor: [
+                                'rgba(255, 99, 132, 1)',
+                                'rgba(54, 162, 235, 1)',
+                                'rgba(255, 206, 86, 1)',
+                                'rgba(75, 192, 192, 1)',
+                                'rgba(153, 102, 255, 1)'
+                            ],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true
                             }
                         }
                     }
                 });
+                checkChartsVisibility();
             })
             .catch(err => console.error(err));
     }
-    
-    // Завантажити дані без дати (поверне пустий список, якщо так реалізовано)
+
+    // Перевірка чи є що відображати та показуємо/ховаємо #chartsRow
+    function checkChartsVisibility() {
+        const aqiVisible = document.getElementById('aqiChartContainer').style.display !== 'none';
+        const pollutantsVisible = document.getElementById('pollutantsChartContainer').style.display !== 'none';
+
+        if (aqiVisible || pollutantsVisible) {
+            document.getElementById('chartsRow').style.display = 'flex';
+        } else {
+            document.getElementById('chartsRow').style.display = 'none';
+        }
+    }
+
+    // Завантажити дані без дати
     loadData();
 
     const form = document.getElementById('date-form');
@@ -227,6 +318,7 @@
         e.preventDefault();
         const selectedDay = document.getElementById('day').value;
         loadData(selectedDay);
+        loadPollutantsAverage(selectedDay);
     });
 </script>
 </body>

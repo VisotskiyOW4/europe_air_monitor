@@ -2,6 +2,7 @@ from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.contrib import messages
 from django.utils.dateparse import parse_date
+from django.db.models import Avg
 from .models import AirQualityStation, AirQualityRecord
 from .forms import CSVUploadForm
 import csv
@@ -67,6 +68,33 @@ def city_data(request):
                     'aqi': aqi
                 })
     return JsonResponse(data, safe=False)
+
+def pollutants_average(request):
+    day_str = request.GET.get('day')
+    data = {}
+    if day_str:
+        day = parse_date(day_str)
+        if day:
+            # Фільтруємо записи за конкретним днем
+            qs = AirQualityRecord.objects.filter(timestamp__date=day)
+            
+            # Обчислюємо середні значення
+            avg_pm25 = qs.aggregate(Avg('pm25'))['pm25__avg']
+            avg_pm10 = qs.aggregate(Avg('pm10'))['pm10__avg']
+            avg_no2 = qs.aggregate(Avg('no2'))['no2__avg']
+            avg_o3 = qs.aggregate(Avg('o3'))['o3__avg']
+            avg_co = qs.aggregate(Avg('co'))['co__avg']
+
+            data = {
+                'day': day_str,
+                'pm25': avg_pm25 if avg_pm25 is not None else 0,
+                'pm10': avg_pm10 if avg_pm10 is not None else 0,
+                'no2': avg_no2 if avg_no2 is not None else 0,
+                'o3': avg_o3 if avg_o3 is not None else 0,
+                'co': avg_co if avg_co is not None else 0
+            }
+
+    return JsonResponse(data)
 
 def upload_csv(request):
     if request.method == 'POST':
