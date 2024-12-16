@@ -115,7 +115,7 @@
       zoom: 4,
       dragging: false,
       touchZoom: false,
-      scrollWheelZoom: false,
+      scrollWheelZoom: true,
       doubleClickZoom: false,
       boxZoom: false,
       keyboard: false,
@@ -143,15 +143,14 @@
       return L.AwesomeMarkers.icon({
         icon: 'info-sign',
         markerColor: markerColor,
-        prefix: 'glyphicon' // або 'fa' для FontAwesome
+        prefix: 'glyphicon'
       });
     }
     
     let markers = [];
-    /*
     let aqiChart = null; 
     let pollutantsChart = null; 
-    */
+
     // Завантаження даних за день (маркерів)
     function loadData(day = '') {
         let url = '/data/';
@@ -168,7 +167,10 @@
 
                 data.forEach(station => {
                     if (station.latitude && station.longitude) {
-                        const marker = L.marker([station.latitude, station.longitude]).addTo(map);
+                        // Використовуємо getMarkerIcon для зміни кольору маркера
+                        const icon = getMarkerIcon(station.aqi ?? 50);
+                        const marker = L.marker([station.latitude, station.longitude], {icon: icon}).addTo(map);
+                        
                         let popupContent = `<div class="info-box">
                             <strong>${station.station || station.name}</strong><br>
                             Індекс якості повітря (AQI): ${station.aqi ?? 'N/A'}<br>
@@ -205,7 +207,6 @@
                     return;
                 }
 
-                // Масиви часу та aqi
                 const labels = data.map(item => item.timestamp);
                 const aqiValues = data.map(item => item.aqi);
 
@@ -273,13 +274,11 @@
                 const selectedDay = data.day || '';
 
                 if (!selectedDay) {
-                    // Якщо день не вибрано або немає даних
                     document.getElementById('pollutantsChartContainer').style.display = 'none';
                     checkChartsVisibility();
                     return;
                 }
 
-                // Оновлюємо стовпчасту діаграму
                 const ctxBar = document.getElementById('pollutantsBarChart').getContext('2d');
                 if (pollutantsChart) {
                     pollutantsChart.destroy();
@@ -326,7 +325,6 @@
             .catch(err => console.error(err));
     }
 
-    // Перевірка чи є що відображати та показуємо/ховаємо #chartsRow
     function checkChartsVisibility() {
         const aqiVisible = document.getElementById('aqiChartContainer').style.display !== 'none';
         const pollutantsVisible = document.getElementById('pollutantsChartContainer').style.display !== 'none';
@@ -338,8 +336,7 @@
         }
     }
 
-    // Завантажити дані без дати
-    loadData();
+    loadData(); // Завантаження даних без дати
 
     const form = document.getElementById('date-form');
     form.addEventListener('submit', (e) => {
