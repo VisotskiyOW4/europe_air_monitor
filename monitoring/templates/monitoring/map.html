@@ -10,6 +10,10 @@
 
     <!-- Підключення Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+    <!-- Leaflet AwesomeMarkers CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.awesome-markers/dist/leaflet.awesome-markers.css"/>
+
     <style>
         #map {
             width: 100%;
@@ -102,6 +106,9 @@
 <!-- Підключення Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+<!-- Leaflet AwesomeMarkers JS -->
+<script src="https://unpkg.com/leaflet.awesome-markers/dist/leaflet.awesome-markers.js"></script>
+
 <script>
     var map = L.map('map', {
       center: [50, 10],
@@ -120,10 +127,31 @@
         attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
+    // Функція вибору кольору маркера на основі AQI
+    function getMarkerIcon(aqi) {
+      let markerColor;
+      if (aqi <= 30) {
+        markerColor = 'green';
+      } else if (aqi <= 60) {
+        markerColor = 'yellow';
+      } else if (aqi <= 90) {
+        markerColor = 'orange';
+      } else {
+        markerColor = 'red';
+      }
+
+      return L.AwesomeMarkers.icon({
+        icon: 'info-sign',
+        markerColor: markerColor,
+        prefix: 'glyphicon' // або 'fa' для FontAwesome
+      });
+    }
+    
     let markers = [];
+    /*
     let aqiChart = null; 
     let pollutantsChart = null; 
-
+    */
     // Завантаження даних за день (маркерів)
     function loadData(day = '') {
         let url = '/data/';
