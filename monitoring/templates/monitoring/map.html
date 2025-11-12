@@ -1,350 +1,174 @@
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Європа - Моніторинг якості повітря</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Глобальний моніторинг навколишнього середовища</title>
 
-    <!-- Підключення Bootstrap CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <!-- Bootstrap -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 
-    <!-- Підключення Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <!-- Leaflet AwesomeMarkers CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.awesome-markers/dist/leaflet.awesome-markers.css"/>
+  <!-- Leaflet AwesomeMarkers -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.awesome-markers/dist/leaflet.awesome-markers.css"/>
+  <script src="https://unpkg.com/leaflet.awesome-markers/dist/leaflet.awesome-markers.js"></script>
 
-    <style>
-        #map {
-            width: 100%;
-            height: 600px;
-        }
-        body {
-            font-family: Arial, sans-serif;
-        }
-        .info-box {
-            font-size: 14px;
-        }
-        /* Ховаємо контейнери графіків поки немає даних */
-        #chartsRow {
-            margin-top: 20px;
-            display: none;
-        }
-        #aqiChartContainer, #pollutantsChartContainer {
-            display: none; /* По замовчуванню сховані, з'являються при наявності даних */
-        }
-    </style>
+  <style>
+    #map {
+      width: 100%;
+      height: 650px;
+      border-radius: 10px;
+    }
+    body {
+      font-family: "Segoe UI", sans-serif;
+    }
+    .legend {
+      background: white;
+      line-height: 1.5em;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+  </style>
 </head>
+
 <body class="d-flex flex-column min-vh-100">
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
   <div class="container-fluid">
-    <a class="navbar-brand" href="{% url 'map_view' %}">Air Quality Europe</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" 
-      data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" 
-      aria-expanded="false" aria-label="Переключити навігацію">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="navbarSupportedContent">
-      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-        <li class="nav-item"><a class="nav-link active" href="{% url 'map_view' %}">Мапа</a></li>
-        <li class="nav-item"><a class="nav-link" href="{% url 'upload_csv' %}">Завантажити CSV</a></li>
-      </ul>
-    </div>
+    <a class="navbar-brand" href="#">Global EnviroMonitor</a>
   </div>
 </nav>
 
 <main class="flex-grow-1">
   <div class="container my-4">
-    <h1 class="mb-3 text-center">Моніторинг якості повітря у Європі</h1>
-
-    <div class="row mb-3">
-      <div class="col-12">
-        <form id="date-form" class="d-flex align-items-end">
-          <div class="me-2">
-            <label for="day" class="form-label">Оберіть день:</label>
-            <input type="date" id="day" name="day" class="form-control"/>
-          </div>
-          <button type="submit" class="btn btn-primary mb-1">Показати</button>
-        </form>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="col-12">
-        <div id="map"></div>
-      </div>
-    </div>
-
-    <!-- Блок для двох графіків -->
-    <div class="row" id="chartsRow">
-      <!-- Лінійний графік AQI по місту -->
-      <div class="col-md-6" id="aqiChartContainer">
-        <h3 class="text-center mt-4" id="chartTitle">Динаміка якості повітря</h3>
-        <canvas id="aqiChart" width="400" height="200"></canvas>
-      </div>
-
-      <!-- Стовпчастий графік середніх показників забрудників -->
-      <div class="col-md-6" id="pollutantsChartContainer">
-        <h3 class="text-center mt-4" id="pollutantsChartTitle">Середні показники забрудників</h3>
-        <canvas id="pollutantsBarChart" width="400" height="200"></canvas>
-      </div>
-    </div>
+    <h2 class="text-center mb-3">Система глобального моніторингу навколишнього середовища</h2>
+    <div id="map"></div>
   </div>
 </main>
 
 <footer class="bg-light text-center text-muted py-2 mt-auto">
-  <small>© 2024 Air Quality Monitoring Project</small>
+  <small>2025 Система глобального моніторингу навколишнього середовища</small>
 </footer>
 
-<!-- Bootstrap JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
-<!-- Leaflet JS -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-<!-- Підключення Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-<!-- Leaflet AwesomeMarkers JS -->
-<script src="https://unpkg.com/leaflet.awesome-markers/dist/leaflet.awesome-markers.js"></script>
-
 <script>
-    var map = L.map('map', {
-      center: [50, 10],
-      zoom: 4,
-      dragging: false,
-      touchZoom: false,
-      scrollWheelZoom: true,
-      doubleClickZoom: false,
-      boxZoom: false,
-      keyboard: false,
-      zoomControl: false
-    });
+  // Ініціалізація карти
+  const map = L.map('map', {center: [48, 10], zoom: 4});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 10,
-        attribution: '© OpenStreetMap contributors'
-    }).addTo(map);
+  // Створюємо різні групи шарів
+  const airLayer = L.layerGroup();
+  const waterLayer = L.layerGroup();
+  const soilLayer = L.layerGroup();
+  const radiationLayer = L.layerGroup();
 
-    // Функція вибору кольору маркера на основі AQI
-    function getMarkerIcon(aqi) {
-      let markerColor;
-      if (aqi <= 30) {
-        markerColor = 'green';
-      } else if (aqi <= 60) {
-        markerColor = 'yellow';
-      } else if (aqi <= 90) {
-        markerColor = 'orange';
-      } else {
-        markerColor = 'red';
-      }
+  // Кольори для маркерів
+  const icons = {
+    air: L.AwesomeMarkers.icon({icon: 'cloud', markerColor: 'blue', prefix: 'fa'}),
+    water: L.AwesomeMarkers.icon({icon: 'tint', markerColor: 'cadetblue', prefix: 'fa'}),
+    soil: L.AwesomeMarkers.icon({icon: 'leaf', markerColor: 'green', prefix: 'fa'}),
+    radiation: L.AwesomeMarkers.icon({icon: 'radiation', markerColor: 'red', prefix: 'fa'})
+  };
 
-      return L.AwesomeMarkers.icon({
-        icon: 'info-sign',
-        markerColor: markerColor,
-        prefix: 'glyphicon'
+  // ====== ПОВІТРЯ ======
+  fetch('/air/data/')
+    .then(res => res.json())
+    .then(data => {
+      data.forEach(station => {
+        const popup = `
+          <b>${station.name}</b><br>
+          PM2.5: ${station.pm25 ?? 'N/A'}<br>
+          PM10: ${station.pm10 ?? 'N/A'}<br>
+          CO: ${station.co ?? 'N/A'}<br>
+          NO₂: ${station.no2 ?? 'N/A'}<br>
+          O₃: ${station.o3 ?? 'N/A'}<br>
+          AQI: ${station.aqi ?? 'N/A'} (${station.status ?? '-'})
+        `;
+        L.marker([station.latitude, station.longitude], {icon: icons.air}).bindPopup(popup).addTo(airLayer);
       });
-    }
-    
-    let markers = [];
-    let aqiChart = null; 
-    let pollutantsChart = null; 
-
-    // Завантаження даних за день (маркерів)
-    function loadData(day = '') {
-        let url = '/data/';
-        if (day) {
-            url += '?day=' + day;
-        }
-
-        fetch(url)
-            .then(response => response.json())
-            .then(data => {
-                // Видаляємо старі маркери
-                markers.forEach(m => map.removeLayer(m));
-                markers = [];
-
-                data.forEach(station => {
-                    if (station.latitude && station.longitude) {
-                        // Використовуємо getMarkerIcon для зміни кольору маркера
-                        const icon = getMarkerIcon(station.aqi ?? 50);
-                        const marker = L.marker([station.latitude, station.longitude], {icon: icon}).addTo(map);
-                        
-                        let popupContent = `<div class="info-box">
-                            <strong>${station.station || station.name}</strong><br>
-                            Індекс якості повітря (AQI): ${station.aqi ?? 'N/A'}<br>
-                            PM2.5: ${station.pm25 ?? 'N/A'} µg/m³<br>
-                            PM10: ${station.pm10 ?? 'N/A'} µg/m³<br>
-                            CO: ${station.co ?? 'N/A'} ppm<br>
-                            NO2: ${station.no2 ?? 'N/A'} µg/m³<br>
-                            O3: ${station.o3 ?? 'N/A'} µg/m³<br>
-                            Останнє оновлення: ${station.timestamp ?? 'N/A'}
-                        </div>`;
-                        marker.bindPopup(popupContent);
-
-                        // При кліку на місто завантажуємо динаміку AQI
-                        marker.on('click', () => {
-                            const cityName = station.station || station.name;
-                            loadCityData(cityName);
-                        });
-
-                        markers.push(marker);
-                    }
-                });
-            })
-            .catch(err => console.error(err));
-    }
-
-    // Завантаження історичних даних для міста (лінійний графік AQI)
-    function loadCityData(city) {
-        fetch('/city_data/?city=' + city)
-            .then(response => response.json())
-            .then(data => {
-                if (data.length === 0) {
-                    document.getElementById('aqiChartContainer').style.display = 'none';
-                    checkChartsVisibility();
-                    return;
-                }
-
-                const labels = data.map(item => item.timestamp);
-                const aqiValues = data.map(item => item.aqi);
-
-                if (aqiChart) {
-                    aqiChart.destroy();
-                }
-
-                document.getElementById('chartTitle').innerText = `Динаміка якості повітря для ${city}`;
-                document.getElementById('aqiChartContainer').style.display = 'block';
-
-                const ctx = document.getElementById('aqiChart').getContext('2d');
-                aqiChart = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            label: 'AQI',
-                            data: aqiValues,
-                            borderColor: 'rgba(75, 192, 192, 1)',
-                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                            fill: true,
-                            tension: 0.1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: {
-                            x: {
-                                title: {
-                                    display: true,
-                                    text: 'Час'
-                                }
-                            },
-                            y: {
-                                title: {
-                                    display: true,
-                                    text: 'Індекс якості повітря (AQI)'
-                                },
-                                min: 0,
-                                max: 100
-                            }
-                        }
-                    }
-                });
-                checkChartsVisibility();
-            })
-            .catch(err => console.error(err));
-    }
-
-    // Завантаження середніх показників забрудників за день (стовпчастий графік)
-    function loadPollutantsAverage(day) {
-        let url = '/pollutants_average/';
-        if (day) {
-            url += '?day=' + day;
-        }
-
-        fetch(url)
-            .then(response => response.json())
-            .then(data => {
-                const pm25 = data.pm25 || 0;
-                const pm10 = data.pm10 || 0;
-                const no2 = data.no2 || 0;
-                const o3 = data.o3 || 0;
-                const co = data.co || 0;
-                const selectedDay = data.day || '';
-
-                if (!selectedDay) {
-                    document.getElementById('pollutantsChartContainer').style.display = 'none';
-                    checkChartsVisibility();
-                    return;
-                }
-
-                const ctxBar = document.getElementById('pollutantsBarChart').getContext('2d');
-                if (pollutantsChart) {
-                    pollutantsChart.destroy();
-                }
-
-                document.getElementById('pollutantsChartTitle').innerText = `Середні значення за ${selectedDay}`;
-                document.getElementById('pollutantsChartContainer').style.display = 'block';
-
-                pollutantsChart = new Chart(ctxBar, {
-                    type: 'bar',
-                    data: {
-                        labels: ['PM2.5', 'PM10', 'NO2', 'O3', 'CO'],
-                        datasets: [{
-                            label: 'Середні показники',
-                            data: [pm25, pm10, no2, o3, co],
-                            backgroundColor: [
-                                'rgba(255, 99, 132, 0.2)',
-                                'rgba(54, 162, 235, 0.2)',
-                                'rgba(255, 206, 86, 0.2)',
-                                'rgba(75, 192, 192, 0.2)',
-                                'rgba(153, 102, 255, 0.2)'
-                            ],
-                            borderColor: [
-                                'rgba(255, 99, 132, 1)',
-                                'rgba(54, 162, 235, 1)',
-                                'rgba(255, 206, 86, 1)',
-                                'rgba(75, 192, 192, 1)',
-                                'rgba(153, 102, 255, 1)'
-                            ],
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: {
-                            y: {
-                                beginAtZero: true
-                            }
-                        }
-                    }
-                });
-                checkChartsVisibility();
-            })
-            .catch(err => console.error(err));
-    }
-
-    function checkChartsVisibility() {
-        const aqiVisible = document.getElementById('aqiChartContainer').style.display !== 'none';
-        const pollutantsVisible = document.getElementById('pollutantsChartContainer').style.display !== 'none';
-
-        if (aqiVisible || pollutantsVisible) {
-            document.getElementById('chartsRow').style.display = 'flex';
-        } else {
-            document.getElementById('chartsRow').style.display = 'none';
-        }
-    }
-
-    loadData(); // Завантаження даних без дати
-
-    const form = document.getElementById('date-form');
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const selectedDay = document.getElementById('day').value;
-        loadData(selectedDay);
-        loadPollutantsAverage(selectedDay);
     });
+
+  // ====== ВОДА ======
+  fetch('/water/data/')
+    .then(res => res.json())
+    .then(data => {
+      data.forEach(station => {
+        const popup = `
+          <b>${station.name}</b><br>
+          pH: ${station.ph ?? 'N/A'}<br>
+          Нітрати: ${station.nitrates ?? 'N/A'}<br>
+          Каламутність: ${station.turbidity ?? 'N/A'}<br>
+          Температура: ${station.temperature ?? 'N/A'}°C<br>
+          Індекс: ${station.index ?? 'N/A'}
+        `;
+        L.marker([station.latitude, station.longitude], {icon: icons.water}).bindPopup(popup).addTo(waterLayer);
+      });
+    });
+
+  // ====== ҐРУНТ ======
+  fetch('/soil/data/')
+    .then(res => res.json())
+    .then(data => {
+      data.forEach(station => {
+        const popup = `
+          <b>${station.name}</b><br>
+          Важкі метали: ${station.heavy_metals ?? 'N/A'}<br>
+          Пестициди: ${station.pesticides ?? 'N/A'}<br>
+          Вологість: ${station.moisture ?? 'N/A'}<br>
+          Індекс родючості: ${station.fertility_index ?? 'N/A'}<br>
+          Ризик: ${station.risk ?? 'N/A'}
+        `;
+        L.marker([station.latitude, station.longitude], {icon: icons.soil}).bindPopup(popup).addTo(soilLayer);
+      });
+    });
+
+  // ====== РАДІАЦІЯ ======
+  fetch('/radiation/data/')
+    .then(res => res.json())
+    .then(data => {
+      data.forEach(station => {
+        const popup = `
+          <b>${station.name}</b><br>
+          Гамма: ${station.gamma ?? 'N/A'}<br>
+          Бета: ${station.beta ?? 'N/A'}<br>
+          Альфа: ${station.alpha ?? 'N/A'}<br>
+          Дозова потужність: ${station.dose_rate ?? 'N/A'}<br>
+          Ризик: ${station.risk ?? 'N/A'}
+        `;
+        L.marker([station.latitude, station.longitude], {icon: icons.radiation}).bindPopup(popup).addTo(radiationLayer);
+      });
+    });
+
+  // Додаємо всі шари на карту
+  const layers = {
+    "Якість повітря": airLayer,
+    "Якість води": waterLayer,
+    "Ґрунт": soilLayer,
+    "Радіаційний фон": radiationLayer
+  };
+
+  L.control.layers(layers, null, {collapsed: false}).addTo(map);
+
+  // Додаємо легенду
+  const legend = L.control({position: 'bottomright'});
+  legend.onAdd = function() {
+    const div = L.DomUtil.create('div', 'legend');
+    div.innerHTML = `
+      <b>Легенда:</b><br>
+      <i class="fa fa-cloud" style="color:#2A81CB"></i> Повітря<br>
+      <i class="fa fa-tint" style="color:#2CA25F"></i> Вода<br>
+      <i class="fa fa-leaf" style="color:#66A61E"></i> Ґрунт<br>
+      <i class="fa fa-radiation" style="color:#E31A1C"></i> Радіація
+    `;
+    return div;
+  };
+  legend.addTo(map);
 </script>
+
 </body>
 </html>

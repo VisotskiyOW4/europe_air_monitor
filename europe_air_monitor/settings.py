@@ -38,6 +38,10 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'monitoring',
+    'monitoring.air',
+    'monitoring.water',
+    'monitoring.soil',
+    'monitoring.radiation',
 ]
 
 MIDDLEWARE = [
