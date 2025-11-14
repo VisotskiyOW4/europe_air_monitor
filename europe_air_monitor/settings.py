@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'monitoring.water',
     'monitoring.soil',
     'monitoring.radiation',
+    'core',
 ]
 
 MIDDLEWARE = [

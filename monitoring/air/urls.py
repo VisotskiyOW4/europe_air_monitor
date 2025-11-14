@@ -1,6 +1,7 @@
 from django.urls import path
-from . import views
+from .views import map_view, stations_data
 
 urlpatterns = [
-    path('data/', views.air_data, name='air_data'),
+    path('', map_view, name='air_map'),
+    path('data/', stations_data, name='air_data'),
 ]

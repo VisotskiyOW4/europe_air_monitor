@@ -1,6 +1,7 @@
 from django.urls import path
-from . import views
+from .views import water_map, water_data
 
 urlpatterns = [
-    path('data/', views.water_data, name='water_data'),
+    path('', water_map, name='water_map'),
+    path('data/', water_data, name='water_data'),
 ]

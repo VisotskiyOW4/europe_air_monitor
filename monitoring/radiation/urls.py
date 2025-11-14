@@ -1,6 +1,7 @@
 from django.urls import path
-from . import views
+from .views import radiation_map, radiation_data
 
 urlpatterns = [
-    path('data/', views.radiation_data, name='radiation_data'),
+    path('', radiation_map, name='radiation_map'),
+    path('data/', radiation_data, name='radiation_data'),
 ]

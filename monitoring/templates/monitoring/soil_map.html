@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>Карта моніторингу ґрунту</h2>
+<div id="map" style="height: 600px;"></div>
+
+<script>
+fetch("/soil/data/")
+    .then(response => response.json())
+    .then(data => {
+        var map = L.map('map').setView([50.45, 30.52], 5);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        data.forEach(station => {
+            L.marker([station.latitude, station.longitude])
+              .addTo(map)
+              .bindPopup(
+                `<b>${station.name}</b><br>
+                 Важкі метали: ${station.heavy_metals}<br>
+                 Пестициди: ${station.pesticides}<br>
+                 pH: ${station.ph}<br>
+                 Час: ${station.timestamp}`
+              );
+        });
+    });
+</script>
+
+{% endblock %}
