@@ -19,8 +19,6 @@ class RadiationRecord(models.Model):
     alpha = models.FloatField()
     ambient_dose_rate = models.FloatField()
 
-    risk_fuzzy = models.FloatField(null=True, blank=True)
-    risk_label = models.CharField(max_length=50, null=True, blank=True)
 
     def __str__(self):
         return f"{self.station.name} - {self.timestamp.strftime('%Y-%m-%d %H:%M')}"

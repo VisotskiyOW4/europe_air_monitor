@@ -18,8 +18,6 @@ class AirQualityRecordAdmin(admin.ModelAdmin):
         "co",
         "no2",
         "o3",
-        "aqi",
-        "risk_label",
     )
     list_filter = ("station", "timestamp")
     search_fields = ("station__name",)

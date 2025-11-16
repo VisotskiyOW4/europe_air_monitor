@@ -16,7 +16,6 @@ class WaterQualityRecordAdmin(admin.ModelAdmin):
         "ph",
         "nitrates",
         "conductivity",
-        "risk_label",
     )
     list_filter = ("station", "timestamp")
     search_fields = ("station__name",)

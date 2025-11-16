@@ -18,7 +18,6 @@ class SoilQualityRecord(models.Model):
     pesticides = models.FloatField()
     ph = models.FloatField()
 
-    risk_label = models.CharField(max_length=50, null=True, blank=True)
 
     def __str__(self):
         return f"{self.station.name} — {self.timestamp.strftime('%Y-%m-%d %H:%M')}"

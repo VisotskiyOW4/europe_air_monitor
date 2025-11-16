@@ -17,8 +17,6 @@ class RadiationRecordAdmin(admin.ModelAdmin):
         "beta",
         "alpha",
         "ambient_dose_rate",
-        "risk_fuzzy",
-        "risk_label",
     )
     list_filter = ("station", "timestamp")
     search_fields = ("station__name",)

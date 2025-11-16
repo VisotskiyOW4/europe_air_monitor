@@ -16,7 +16,6 @@ class SoilQualityRecordAdmin(admin.ModelAdmin):
         "heavy_metals",
         "pesticides",
         "ph",
-        "risk_label",
     )
     list_filter = ("station", "timestamp")
     search_fields = ("station__name",)
