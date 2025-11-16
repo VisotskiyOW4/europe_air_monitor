@@ -1,0 +1,30 @@
+{% extends "monitoring/base.html" %}
+{% block content %}
+
+<h2 class="text-center">Моніторинг якості повітря</h2>
+<div id="map"></div>
+
+<script>
+fetch("/air/data/")
+    .then(r => r.json())
+    .then(data => {
+        let map = L.map("map").setView([50.45, 30.52], 5);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {}).addTo(map);
+
+        data.forEach(p => {
+            L.marker([p.latitude, p.longitude])
+                .addTo(map)
+                .bindPopup(`
+                    <b>${p.name}</b><br>
+                    PM2.5: ${p.pm25}<br>
+                    PM10: ${p.pm10}<br>
+                    CO: ${p.co}<br>
+                    NO₂: ${p.no2}<br>
+                    O₃: ${p.o3}<br>
+                    Час: ${p.timestamp}
+                `);
+        });
+    });
+</script>
+
+{% endblock %}

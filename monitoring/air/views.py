@@ -2,28 +2,26 @@ from django.shortcuts import render
 from django.http import JsonResponse
 from .models import AirQualityStation, AirQualityRecord
 
-def map_view(request):
-    return render(request, "monitoring/map.html")
+def air_map(request):
+    return render(request, "monitoring/air.html")
 
-def stations_data(request):
+def air_data(request):
     stations = AirQualityStation.objects.all()
     data = []
 
     for s in stations:
-        last_record = AirQualityRecord.objects.filter(station=s).order_by('-timestamp').first()
-
-        if last_record:
+        rec = AirQualityRecord.objects.filter(station=s).order_by("-timestamp").first()
+        if rec:
             data.append({
-                'name': s.name,
-                'latitude': s.latitude,
-                'longitude': s.longitude,
-                'pm25': last_record.pm25,
-                'pm10': last_record.pm10,
-                'co': last_record.co,
-                'no2': last_record.no2,
-                'o3': last_record.o3,
-                'timestamp': last_record.timestamp.strftime("%Y-%m-%d %H:%M"),
-                'aqi': last_record.calculate_aqi() if hasattr(last_record, "calculate_aqi") else None
+                "name": s.name,
+                "latitude": s.latitude,
+                "longitude": s.longitude,
+                "pm25": rec.pm25,
+                "pm10": rec.pm10,
+                "co": rec.co,
+                "no2": rec.no2,
+                "o3": rec.o3,
+                "timestamp": rec.timestamp.strftime("%Y-%m-%d %H:%M")
             })
 
     return JsonResponse(data, safe=False)

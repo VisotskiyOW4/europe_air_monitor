@@ -1,0 +1,28 @@
+{% extends "monitoring/base.html" %}
+{% block content %}
+
+<h2 class="text-center">Моніторинг ґрунту</h2>
+<div id="map"></div>
+
+<script>
+fetch("/soil/data/")
+    .then(r => r.json())
+    .then(data => {
+        let map = L.map("map").setView([50.45, 30.52], 5);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {}).addTo(map);
+
+        data.forEach(p => {
+            L.marker([p.latitude, p.longitude])
+                .addTo(map)
+                .bindPopup(`
+                    <b>${p.name}</b><br>
+                    Важкі метали: ${p.heavy_metals}<br>
+                    Пестициди: ${p.pesticides}<br>
+                    pH: ${p.ph}<br>
+                    Час: ${p.timestamp}
+                `);
+        });
+    });
+</script>
+
+{% endblock %}

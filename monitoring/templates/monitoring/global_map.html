@@ -1,0 +1,67 @@
+{% extends 'monitoring/base.html' %}
+{% block content %}
+
+<h2 class="text-center mt-3">Система глобального моніторингу</h2>
+<div id="map" style="height: 650px; margin-top: 20px;"></div>
+
+<script>
+var map = L.map("map").setView([50.45, 30.52], 5);
+
+// Base layer
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+}).addTo(map);
+
+// Marker groups
+var airLayer = L.layerGroup();
+var waterLayer = L.layerGroup();
+var soilLayer = L.layerGroup();
+var radiationLayer = L.layerGroup();
+
+fetch("/api/global/")
+    .then(response => response.json())
+    .then(data => {
+        // AIR
+        data.air.forEach(s => {
+            L.marker([s.lat, s.lon])
+                .bindPopup(`<b>${s.name}</b><br>PM2.5: ${s.pm25}<br>PM10: ${s.pm10}<br>CO: ${s.co}<br>NO₂: ${s.no2}<br>O₃: ${s.o3}<br>${s.timestamp}`)
+                .addTo(airLayer);
+        });
+
+        // WATER
+        data.water.forEach(s => {
+            L.marker([s.lat, s.lon])
+                .bindPopup(`<b>${s.name}</b><br>pH: ${s.ph}<br>Нітрати: ${s.nitrates}<br>Провідність: ${s.conductivity}<br>${s.timestamp}`)
+                .addTo(waterLayer);
+        });
+
+        // SOIL
+        data.soil.forEach(s => {
+            L.marker([s.lat, s.lon])
+                .bindPopup(`<b>${s.name}</b><br>Метали: ${s.heavy_metals}<br>Пестициди: ${s.pesticides}<br>pH: ${s.ph}<br>${s.timestamp}`)
+                .addTo(soilLayer);
+        });
+
+        // RADIATION
+        data.radiation.forEach(s => {
+            L.marker([s.lat, s.lon])
+                .bindPopup(`<b>${s.name}</b><br>Gamma: ${s.gamma}<br>Beta: ${s.beta}<br>Alpha: ${s.alpha}<br>Доза: ${s.dose}<br>${s.timestamp}`)
+                .addTo(radiationLayer);
+        });
+    });
+
+// Layer switcher
+var overlays = {
+    "Якість повітря": airLayer,
+    "Якість води": waterLayer,
+    "Грунт": soilLayer,
+    "Радіація": radiationLayer
+};
+
+L.control.layers(null, overlays).addTo(map);
+
+// Default visible layer
+airLayer.addTo(map);
+</script>
+
+{% endblock %}

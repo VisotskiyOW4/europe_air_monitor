@@ -1,4 +1,5 @@
 from django.shortcuts import render
 
-def dashboard(request):
-    return render(request, "monitoring/dashboard.html")
+def global_map(request):
+    return render(request, "monitoring/global_map.html")
+
