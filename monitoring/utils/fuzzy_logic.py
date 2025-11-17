@@ -1,118 +1,95 @@
-def _norm(value, v_min, v_max):
-    """
-    Просте нормування в діапазон [0, 1].
-    Якщо value = None -> 0, щоб не падало.
-    """
+# monitoring/utils/fuzzy_logic.py
+
+def normalize(value, min_val, max_val):
+    """Нормалізація в діапазон 0–1"""
     if value is None:
-        return 0.0
-    if v_max == v_min:
-        return 0.0
-    x = (float(value) - v_min) / (v_max - v_min)
-    return max(0.0, min(1.0, x))
+        return 0
+    return max(0, min(1, (value - min_val) / (max_val - min_val)))
 
 
-def _risk_level(score):
-    """
-    Перетворюємо числовий індекс [0..1] на текстову категорію.
-    Тут дуже проста логіка – пізніше можна замінити на повноцінну нечітку систему.
-    """
+def risk_label(score):
+    """Перетворення ризику в текстову метку"""
     if score < 0.33:
         return "Низький"
     elif score < 0.66:
         return "Середній"
-    else:
-        return "Високий"
+    return "Високий"
 
 
-# ---------- ПОВІТРЯ ----------
+# ---------------------------------------------------------
+# 1) НЕЧІТКА ЛОГІКА ДЛЯ ПОВІТРЯ
+# ---------------------------------------------------------
 
-def calc_air_risk(pm25, pm10, co, no2, o3):
+def calc_air_risk(st):
     """
-    Повертає (risk_index, risk_label) для якості повітря.
-    Діапазони – умовні, їх можна буде відкоригувати під реальні норми.
+    st — dict із полями: pm25, pm10, co, no2, o3
     """
-    n_pm25 = _norm(pm25, 0, 75)      # мкг/м³
-    n_pm10 = _norm(pm10, 0, 100)
-    n_co   = _norm(co,   0, 10)      # мг/м³
-    n_no2  = _norm(no2,  0, 200)
-    n_o3   = _norm(o3,   0, 180)
 
-    # Ваги параметрів – теж поки умовні
-    score = (
-        0.30 * n_pm25 +
-        0.25 * n_pm10 +
-        0.15 * n_co +
-        0.15 * n_no2 +
-        0.15 * n_o3
-    )
+    pm25 = normalize(st["pm25"], 0, 150)
+    pm10 = normalize(st["pm10"], 0, 200)
+    co = normalize(st["co"], 0, 15)
+    no2 = normalize(st["no2"], 0, 200)
+    o3 = normalize(st["o3"], 0, 200)
 
-    label = _risk_level(score)
-    return score, label
+    score = (pm25 * 0.35 +
+             pm10 * 0.25 +
+             co * 0.15 +
+             no2 * 0.15 +
+             o3 * 0.10)
 
-
-# ---------- ВОДА ----------
-
-def calc_water_risk(ph, nitrates, conductivity):
-    """
-    pH – найкраще близько 7, тому використовуємо «V-подібну» норму:
-    відхилення від 7 збільшує ризик.
-    """
-    if ph is None:
-        n_ph = 0.0
-    else:
-        # 6.5–8.5 – ок, за межами гірше
-        deviation = abs(float(ph) - 7.0)
-        n_ph = _norm(deviation, 0, 3)
-
-    n_nitrates     = _norm(nitrates,     0, 50)    # мг/л
-    n_conductivity = _norm(conductivity, 0, 800)   # мкСм/см
-
-    score = (
-        0.4 * n_ph +
-        0.35 * n_nitrates +
-        0.25 * n_conductivity
-    )
-
-    label = _risk_level(score)
-    return score, label
+    return {
+        "risk_score": round(score, 3),
+        "risk_label": risk_label(score),
+    }
 
 
-# ---------- ҐРУНТ ----------
+# ---------------------------------------------------------
+# 2) НЕЧІТКА ЛОГІКА ДЛЯ ВОДИ
+# ---------------------------------------------------------
 
-def calc_soil_risk(heavy_metals, pesticides, ph):
-    if ph is None:
-        n_ph = 0.0
-    else:
-        deviation = abs(float(ph) - 7.0)
-        n_ph = _norm(deviation, 0, 3)
+def calc_water_risk(st):
+    ph = normalize(abs(st["ph"] - 7), 0, 7)  # відхилення від норми
+    nitrates = normalize(st["nitrates"], 0, 100)
+    conductivity = normalize(st["conductivity"], 0, 2000)
 
-    n_metals     = _norm(heavy_metals, 0, 50)   # умовні одиниці
-    n_pesticides = _norm(pesticides,  0, 5)
+    score = ph * 0.4 + nitrates * 0.35 + conductivity * 0.25
 
-    score = (
-        0.45 * n_metals +
-        0.35 * n_pesticides +
-        0.20 * n_ph
-    )
-
-    label = _risk_level(score)
-    return score, label
+    return {
+        "risk_score": round(score, 3),
+        "risk_label": risk_label(score),
+    }
 
 
-# ---------- РАДІАЦІЯ ----------
+# ---------------------------------------------------------
+# 3) НЕЧІТКА ЛОГІКА ДЛЯ ҐРУНТУ
+# ---------------------------------------------------------
 
-def calc_radiation_risk(gamma, beta, alpha, ambient_dose_rate):
-    n_gamma = _norm(gamma,            0, 0.5)   # мкЗв/год, умовно
-    n_beta  = _norm(beta,             0, 0.5)
-    n_alpha = _norm(alpha,            0, 0.5)
-    n_dose  = _norm(ambient_dose_rate, 0, 0.3)
+def calc_soil_risk(st):
+    heavy = normalize(st["heavy_metals"], 0, 500)
+    pest = normalize(st["pesticides"], 0, 200)
+    ph = normalize(abs(st["ph"] - 7), 0, 7)
 
-    score = (
-        0.25 * n_gamma +
-        0.20 * n_beta +
-        0.20 * n_alpha +
-        0.35 * n_dose
-    )
+    score = heavy * 0.45 + pest * 0.35 + ph * 0.20
 
-    label = _risk_level(score)
-    return score, label
+    return {
+        "risk_score": round(score, 3),
+        "risk_label": risk_label(score),
+    }
+
+
+# ---------------------------------------------------------
+# 4) НЕЧІТКА ЛОГІКА ДЛЯ РАДІАЦІЇ
+# ---------------------------------------------------------
+
+def calc_radiation_risk(st):
+    gamma = normalize(st["gamma"], 0, 1.0)
+    beta = normalize(st["beta"], 0, 2.0)
+    alpha = normalize(st["alpha"], 0, 0.5)
+    dose = normalize(st["ambient_dose_rate"], 0, 5.0)
+
+    score = gamma * 0.35 + beta * 0.25 + alpha * 0.15 + dose * 0.25
+
+    return {
+        "risk_score": round(score, 3),
+        "risk_label": risk_label(score),
+    }

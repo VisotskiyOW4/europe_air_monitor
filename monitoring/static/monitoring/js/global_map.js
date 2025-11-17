@@ -1,27 +1,36 @@
-// === Генерація кольорових маркерів (Leaflet divIcon) ===
-function makeMarker(color) {
+// ===============================
+// === Генерація кольорових маркерів ===
+// ===============================
+
+// Повертає колір на основі ризику з нечіткої логіки
+function getColorByRisk(risk) {
+    if (!risk) return "#999"; // якщо даних немає
+
+    const r = risk.toLowerCase();
+
+    if (r.includes("low") || r.includes("низь")) return "#2ECC71";     // зелений
+    if (r.includes("medium") || r.includes("серед")) return "#F1C40F"; // жовтий
+    if (r.includes("high") || r.includes("висок")) return "#E74C3C";   // червоний
+
+    return "#999"; // fallback
+}
+
+// Маркер круглої форми
+function makeRiskMarker(color) {
     return L.divIcon({
         className: "custom-marker",
         html: `<div style="
-            width: 16px;
-            height: 16px;
+            width: 18px;
+            height: 18px;
             background: ${color};
-            border: 2px solid white;
+            border: 2px solid #fff;
             border-radius: 50%;
-            box-shadow: 0 0 4px #333;
+            box-shadow: 0 0 5px #333;
         "></div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
+        iconSize: [18, 18],
+        iconAnchor: [9, 9]
     });
 }
-
-// Кольори маркерів для кожного типу моніторингу
-const markerStyles = {
-    air: "#1E90FF",       // синій
-    water: "#00BFFF",     // бірюзовий
-    soil: "#8B4513",      // коричневий
-    radiation: "#FF4500"  // яскраво-помаранчевий
-};
 
 
 
@@ -48,7 +57,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     layers.air.addTo(map); // стартовий шар
 
-    // === 3. Завантаження усіх станцій ===
+    // === 3. Завантаження API ===
     fetch("/api/global/")
         .then(response => response.json())
         .then(data => {
@@ -63,34 +72,34 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // === 4. Заголовки параметрів ===
     const PARAM_TITLES = {
-    air: {
-        pm25: "PM2.5",
-        pm10: "PM10",
-        co: "CO",
-        no2: "NO₂",
-        o3: "O₃",
-        risk_label: "Ризик",          // ← додали
-    },
-    water: {
-        ph: "pH",
-        nitrates: "Нітрати",
-        conductivity: "Провідність",
-        risk_label: "Ризик",
-    },
-    soil: {
-        heavy_metals: "Важкі метали",
-        pesticides: "Пестициди",
-        ph: "pH",
-        risk_label: "Ризик",
-    },
-    radiation: {
-        gamma: "Gamma",
-        beta: "Beta",
-        alpha: "Alpha",
-        ambient_dose_rate: "Ambient dose rate",
-        risk_label: "Ризик",
-    }
-};
+        air: {
+            pm25: "PM2.5",
+            pm10: "PM10",
+            co: "CO",
+            no2: "NO₂",
+            o3: "O₃",
+            risk_label: "Ризик",
+        },
+        water: {
+            ph: "pH",
+            nitrates: "Нітрати",
+            conductivity: "Провідність",
+            risk_label: "Ризик",
+        },
+        soil: {
+            heavy_metals: "Важкі метали",
+            pesticides: "Пестициди",
+            ph: "pH",
+            risk_label: "Ризик",
+        },
+        radiation: {
+            gamma: "Gamma",
+            beta: "Beta",
+            alpha: "Alpha",
+            ambient_dose_rate: "Ambient dose rate",
+            risk_label: "Ризик",
+        }
+    };
 
     // === 5. Форматування popup ===
     function formatStation(st, type) {
@@ -111,9 +120,12 @@ document.addEventListener("DOMContentLoaded", function () {
         layerGroup.clearLayers();
 
         stations.forEach(st => {
+            // Визначаємо колір маркера за нечіткою логікою
+            const markerColor = getColorByRisk(st.risk_fuzzy || st.risk_label);
+
             const marker = L.marker(
                 [st.lat, st.lon],
-                { icon: makeMarker(markerStyles[type]) }
+                { icon: makeRiskMarker(markerColor) }
             );
 
             marker.bindPopup(formatStation(st, type));
@@ -143,7 +155,7 @@ document.addEventListener("DOMContentLoaded", function () {
         box.innerHTML = html;
     }
 
-    // === 8. Перемикання шарів ===
+    // === 8. Перемикач шарів ===
     document.querySelectorAll("input[name='layer']").forEach(radio => {
         radio.addEventListener("change", function () {
             Object.values(layers).forEach(l => map.removeLayer(l));
