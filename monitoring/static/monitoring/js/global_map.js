@@ -2,20 +2,19 @@
 // === Генерація кольорових маркерів ===
 // ===============================
 
-// Повертає колір на основі ризику з нечіткої логіки
+// Повертає колір на основі fuzzy-ризику
 function getColorByRisk(risk) {
-    if (!risk) return "#999"; // якщо даних немає
+    if (!risk) return "#999";
 
     const r = risk.toLowerCase();
+    if (r.includes("low") || r.includes("низь")) return "#2ECC71";
+    if (r.includes("medium") || r.includes("серед")) return "#F1C40F";
+    if (r.includes("high") || r.includes("висок")) return "#E74C3C";
 
-    if (r.includes("low") || r.includes("низь")) return "#2ECC71";     // зелений
-    if (r.includes("medium") || r.includes("серед")) return "#F1C40F"; // жовтий
-    if (r.includes("high") || r.includes("висок")) return "#E74C3C";   // червоний
-
-    return "#999"; // fallback
+    return "#999";
 }
 
-// Маркер круглої форми
+// Створення круглого маркера
 function makeRiskMarker(color) {
     return L.divIcon({
         className: "custom-marker",
@@ -33,13 +32,12 @@ function makeRiskMarker(color) {
 }
 
 
-
 document.addEventListener("DOMContentLoaded", function () {
 
     const mapElement = document.getElementById("map");
     if (!mapElement) return;
 
-    // === 1. Створення карти ===
+    // === Створення карти ===
     const map = L.map("map").setView([50.45, 30.52], 5);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -47,7 +45,7 @@ document.addEventListener("DOMContentLoaded", function () {
         attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // === 2. Групи маркерів ===
+    // === Групи шарів ===
     const layers = {
         air: L.layerGroup(),
         water: L.layerGroup(),
@@ -55,11 +53,11 @@ document.addEventListener("DOMContentLoaded", function () {
         radiation: L.layerGroup()
     };
 
-    layers.air.addTo(map); // стартовий шар
+    layers.air.addTo(map);
 
-    // === 3. Завантаження API ===
+    // === Завантаження загального API ===
     fetch("/api/global/")
-        .then(response => response.json())
+        .then(r => r.json())
         .then(data => {
             console.log("Global API:", data);
 
@@ -67,10 +65,10 @@ document.addEventListener("DOMContentLoaded", function () {
             renderMarkers(data.water, layers.water, "water");
             renderMarkers(data.soil, layers.soil, "soil");
             renderMarkers(data.radiation, layers.radiation, "radiation");
-        })
-        .catch(err => console.error("Помилка API:", err));
+        });
 
-    // === 4. Заголовки параметрів ===
+
+    // === Заголовки параметрів ===
     const PARAM_TITLES = {
         air: {
             pm25: "PM2.5",
@@ -101,31 +99,20 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     };
 
-    // === 5. Форматування popup ===
-    function formatStation(st, type) {
-        let html = `<b>${st.name}</b><br>`;
 
-        for (let key in PARAM_TITLES[type]) {
-            if (st[key] !== undefined) {
-                html += `${PARAM_TITLES[type][key]}: ${st[key]}<br>`;
-            }
-        }
-
-        html += `<small>${st.timestamp}</small>`;
-        return html;
-    }
-
-    // === 6. Рендер маркерів ===
+    // ===============================
+    // === Рендер маркерів ===
+    // ===============================
     function renderMarkers(stations, layerGroup, type) {
         layerGroup.clearLayers();
 
         stations.forEach(st => {
-            // Визначаємо колір маркера за нечіткою логікою
-            const markerColor = getColorByRisk(st.risk_fuzzy || st.risk_label);
+
+            const color = getColorByRisk(st.risk_label);
 
             const marker = L.marker(
                 [st.lat, st.lon],
-                { icon: makeRiskMarker(markerColor) }
+                { icon: makeRiskMarker(color) }
             );
 
             marker.bindPopup(formatStation(st, type));
@@ -138,10 +125,61 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    // === 7. Панель справа ===
+
+    // ===============================
+    // === Popup форматування ===
+    // ===============================
+    function formatStation(st, type) {
+        let html = `<b>${st.name}</b><br>`;
+
+        for (let key in PARAM_TITLES[type]) {
+            if (st[key] !== undefined) {
+                html += `${PARAM_TITLES[type][key]}: ${st[key]}<br>`;
+            }
+        }
+        html += `<small>${st.timestamp}</small>`;
+        return html;
+    }
+
+
+    // ===============================
+    // === Графік історії ===
+    // ===============================
+    let historyChart = null;
+
+    function loadHistoryChart(type, station_id) {
+
+        fetch(`/api/history/${type}/${station_id}/`)
+            .then(r => r.json())
+            .then(data => {
+
+                const ctx = document.getElementById("historyChart").getContext("2d");
+
+                if (historyChart) historyChart.destroy();
+
+                historyChart = new Chart(ctx, {
+                    type: "line",
+                    data: {
+                        labels: data.timestamps,
+                        datasets: [{
+                            label: data.param,
+                            data: data.values,
+                            borderColor: "#007BFF",
+                            borderWidth: 2,
+                            fill: false
+                        }]
+                    },
+                    options: { responsive: true }
+                });
+            });
+    }
+
+
+    // ===============================
+    // === Панель справа ===
+    // ===============================
     function updateDetailsPanel(st, type) {
         const box = document.getElementById("station-details");
-        if (!box) return;
 
         let html = `<h4>${st.name}</h4><ul>`;
 
@@ -151,11 +189,21 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         }
 
-        html += `</ul><small>${st.timestamp}</small>`;
+        html += `</ul>
+            <h5>Динаміка показників</h5>
+            <canvas id="historyChart" height="140"></canvas>
+        `;
+
         box.innerHTML = html;
+
+        //Завантажуємо історію за ID
+        loadHistoryChart(type, st.id);
     }
 
-    // === 8. Перемикач шарів ===
+
+    // ===============================
+    // === Перемикачі шарів ===
+    // ===============================
     document.querySelectorAll("input[name='layer']").forEach(radio => {
         radio.addEventListener("change", function () {
             Object.values(layers).forEach(l => map.removeLayer(l));

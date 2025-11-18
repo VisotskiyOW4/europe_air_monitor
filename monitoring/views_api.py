@@ -1,4 +1,5 @@
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
 
 from monitoring.air.models import AirQualityStation, AirQualityRecord
 from monitoring.water.models import WaterQualityStation, WaterQualityRecord
@@ -39,6 +40,7 @@ def api_global(request):
             fuzzy = calc_air_risk(data)
 
             result["air"].append({
+                "id": s.id,
                 "name": s.name,
                 "lat": s.latitude,
                 "lon": s.longitude,
@@ -64,6 +66,7 @@ def api_global(request):
             fuzzy = calc_water_risk(data)
 
             result["water"].append({
+                "id": s.id,
                 "name": s.name,
                 "lat": s.latitude,
                 "lon": s.longitude,
@@ -89,6 +92,7 @@ def api_global(request):
             fuzzy = calc_soil_risk(data)
 
             result["soil"].append({
+                "id": s.id,
                 "name": s.name,
                 "lat": s.latitude,
                 "lon": s.longitude,
@@ -115,6 +119,7 @@ def api_global(request):
             fuzzy = calc_radiation_risk(data)
 
             result["radiation"].append({
+                "id": s.id,
                 "name": s.name,
                 "lat": s.latitude,
                 "lon": s.longitude,
@@ -125,3 +130,39 @@ def api_global(request):
             })
 
     return JsonResponse(result, safe=False)
+
+
+def api_history(request, category, station_name):
+    model_map = {
+        "air": (AirQualityStation, AirQualityRecord),
+        "water": (WaterQualityStation, WaterQualityRecord),
+        "soil": (SoilQualityStation, SoilQualityRecord),
+        "radiation": (RadiationStation, RadiationRecord),
+    }
+
+    if category not in model_map:
+        return JsonResponse({"error": "Unknown category"}, status=400)
+
+    StationModel, RecordModel = model_map[category]
+
+    station = get_object_or_404(StationModel, name=station_name)
+
+    records = RecordModel.objects.filter(station=station).order_by("timestamp")
+
+    data = []
+    for r in records:
+        entry = {"timestamp": r.timestamp}
+
+        # копіюємо всі числові поля автоматично
+        for field in RecordModel._meta.get_fields():
+            if field.name not in ["id", "station", "timestamp", "risk_label"]:
+                try:
+                    value = getattr(r, field.name)
+                    if isinstance(value, (int, float)):
+                        entry[field.name] = value
+                except:
+                    pass
+
+        data.append(entry)
+
+    return JsonResponse({"station": station_name, "history": data})
