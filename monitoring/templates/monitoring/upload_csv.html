@@ -1,0 +1,23 @@
+{% extends "monitoring/base.html" %}
+{% block content %}
+
+<div class="container my-4">
+    <h2>Завантаження CSV даних</h2>
+    <p>Виберіть CSV файл із даними моніторингу. Система автоматично визначить тип даних.</p>
+
+    {% if message %}
+        <div class="alert alert-info">{{ message }}</div>
+    {% endif %}
+
+    <form action="" method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="mb-3">
+            <label class="form-label">CSV файл:</label>
+            <input type="file" name="csv_file" accept=".csv" class="form-control" required>
+        </div>
+
+        <button class="btn btn-primary" type="submit">Імпортувати</button>
+    </form>
+</div>
+
+{% endblock %}
