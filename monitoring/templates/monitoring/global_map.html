@@ -6,23 +6,43 @@
     <h2 class="text-center my-4">Система глобального моніторингу навколишнього середовища</h2>
 
     <div class="row">
+        <!-- Ліва частина: мапа -->
         <div class="col-md-9">
             <div id="map" style="height: 650px; border-radius: 10px;"></div>
         </div>
 
+        <!-- Права панель -->
         <div class="col-md-3">
+
+            <!-- Вибір шару -->
             <div class="card p-3 mb-3">
                 <h5 class="fw-bold">Обраний шар</h5>
 
-                <label><input type="radio" name="layer" value="air" checked> Якість повітря</label><br>
-                <label><input type="radio" name="layer" value="water"> Якість води</label><br>
-                <label><input type="radio" name="layer" value="soil"> Грунт</label><br>
-                <label><input type="radio" name="layer" value="radiation"> Радіаційний фон</label>
+                <label>
+                    <input type="radio" name="layer" value="air" checked>
+                    Якість повітря
+                </label><br>
+                <label>
+                    <input type="radio" name="layer" value="water">
+                    Якість води
+                </label><br>
+                <label>
+                    <input type="radio" name="layer" value="soil">
+                    Ґрунт
+                </label><br>
+                <label>
+                    <input type="radio" name="layer" value="radiation">
+                    Радіаційний фон
+                </label>
             </div>
 
-            <div class="card p-3">
+            <!-- Деталі станції -->
+            <div class="card p-3 mb-3" id="station-details">
                 <h5 class="fw-bold">Детальна інформація про станцію</h5>
-                <div id="station-details">Виберіть станцію на мапі…</div>
+                <div class="text-muted">Виберіть станцію на мапі…</div>
+                <div id="chart-container">
+                    <canvas id="historyChart" height="200"></canvas>
+                </div>
             </div>
         </div>
     </div>

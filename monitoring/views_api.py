@@ -132,68 +132,39 @@ def api_global(request):
     return JsonResponse(result, safe=False)
 
 
-def api_history(request, category, station_name):
-    # Мапа моделей та функцій нечіткої логіки
+def api_history(request, category, station_id):
     model_map = {
-        "air": (
-            AirQualityStation,
-            AirQualityRecord,
-            calc_air_risk,
-            ["pm25", "pm10", "co", "no2", "o3"]
-        ),
-        "water": (
-            WaterQualityStation,
-            WaterQualityRecord,
-            calc_water_risk,
-            ["ph", "nitrates", "conductivity"]
-        ),
-        "soil": (
-            SoilQualityStation,
-            SoilQualityRecord,
-            calc_soil_risk,
-            ["heavy_metals", "pesticides", "ph"]
-        ),
-        "radiation": (
-            RadiationStation,
-            RadiationRecord,
-            calc_radiation_risk,
-            ["gamma", "beta", "alpha", "ambient_dose_rate"]
-        ),
+        "air": (AirQualityStation, AirQualityRecord),
+        "water": (WaterQualityStation, WaterQualityRecord),
+        "soil": (SoilQualityStation, SoilQualityRecord),
+        "radiation": (RadiationStation, RadiationRecord),
     }
 
     if category not in model_map:
         return JsonResponse({"error": "Unknown category"}, status=400)
 
-    StationModel, RecordModel, fuzzy_fn, field_list = model_map[category]
+    StationModel, RecordModel = model_map[category]
 
-    # Знаходимо станцію
-    station = get_object_or_404(StationModel, name=station_name)
+    # ВАЖЛИВО: видаляємо лишні пробіли
+    station_name = station_name.strip()
 
-    # Отримуємо всі записи
+    # Пошук станції
+    station = get_object_or_404(StationModel, id=station_name)
+
     records = RecordModel.objects.filter(station=station).order_by("timestamp")
 
-    history = []
-
+    data = []
     for r in records:
-        # --- Формуємо дані для fuzzy logic ---
-        fuzzy_input = {}
+        entry = {"timestamp": r.timestamp}
+        for field in RecordModel._meta.get_fields():
+            if field.name not in ["id", "station", "timestamp", "risk_label"]:
+                try:
+                    value = getattr(r, field.name)
+                    if isinstance(value, (int, float)):
+                        entry[field.name] = value
+                except:
+                    pass
+        data.append(entry)
 
-        for param in field_list:
-            fuzzy_input[param] = getattr(r, param)
+    return JsonResponse({"station": station_name, "history": data})
 
-        fuzzy = fuzzy_fn(fuzzy_input)
-
-        entry = {
-            "timestamp": r.timestamp,
-            **{param: getattr(r, param) for param in field_list},
-            "risk_score": fuzzy["risk_score"],
-            "risk_label": fuzzy["risk_label"]
-        }
-
-        history.append(entry)
-
-    return JsonResponse({
-        "station": station_name,
-        "category": category,
-        "history": history
-    })

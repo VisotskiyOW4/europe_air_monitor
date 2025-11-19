@@ -8,13 +8,9 @@ from monitoring.water.models import WaterQualityStation, WaterQualityRecord
 from monitoring.soil.models import SoilQualityStation, SoilQualityRecord
 from monitoring.radiation.models import RadiationStation, RadiationRecord
 
-from monitoring.utils.fuzzy_logic import (
-    calc_air_risk, calc_water_risk, calc_soil_risk, calc_radiation_risk
-)
-
 
 def detect_monitoring_type(headers):
-    headers = [h.lower() for h in headers]
+    headers = [h.lower().strip() for h in headers]
 
     if "pm25" in headers or "pm10" in headers:
         return "air"
@@ -34,8 +30,8 @@ def upload_csv(request):
         file = request.FILES.get("csv_file")
 
         if not file:
-            message = "Файл не вибрано!"
-            return render(request, "upload_csv.html", {"message": message})
+            return render(request, "monitoring/upload_csv.html",
+                          {"message": "Файл не вибрано!"})
 
         decoded = file.read().decode("utf-8").splitlines()
         reader = csv.DictReader(decoded)
@@ -43,84 +39,118 @@ def upload_csv(request):
         monitoring_type = detect_monitoring_type(reader.fieldnames)
 
         if monitoring_type is None:
-            return render(request, "upload_csv.html", {"message": "Не вдалося визначити тип моніторингу."})
+            return render(request, "monitoring/upload_csv.html",
+                          {"message": "Не вдалося визначити тип моніторингу."})
 
         count = 0
 
         for row in reader:
-            name = row.get("station") or row.get("name")
-            lat = row.get("latitude")
-            lon = row.get("longitude")
-            timestamp = row.get("timestamp")
 
-            # Перетворення часу
+            # --- очищення та перевірка загальних полів ---
+            name = (row.get("name") or row.get("station") or "").strip()
+            if not name:
+                continue  # пропускаємо некоректний рядок
+
             try:
-                timestamp = datetime.fromisoformat(timestamp)
+                lat = float(str(row.get("latitude")).strip())
+                lon = float(str(row.get("longitude")).strip())
+            except:
+                continue  # пропуск якщо координати не читаються
+
+            # timestamp
+            ts = str(row.get("timestamp")).strip()
+            try:
+                timestamp = datetime.fromisoformat(ts)
             except:
                 timestamp = timezone.now()
 
+            # ============================================
+            # AIR
+            # ============================================
             if monitoring_type == "air":
-                st, _ = AirQualityStation.objects.get_or_create(
-                    name=name, latitude=lat, longitude=lon
+                st, created = AirQualityStation.objects.get_or_create(
+                    name=name,
+                    defaults={"latitude": lat, "longitude": lon}
                 )
-                rec = AirQualityRecord.objects.create(
+
+                # оновлення координат якщо станція існувала
+                if not created:
+                    st.latitude, st.longitude = lat, lon
+                    st.save()
+
+                AirQualityRecord.objects.create(
                     station=st,
-                    pm25=row.get("pm25"),
-                    pm10=row.get("pm10"),
-                    co=row.get("co"),
-                    no2=row.get("no2"),
-                    o3=row.get("o3"),
+                    pm25=float(row.get("pm25")),
+                    pm10=float(row.get("pm10")),
+                    co=float(row.get("co")),
+                    no2=float(row.get("no2")),
+                    o3=float(row.get("o3")),
                     timestamp=timestamp
                 )
-                rec.risk_label = calc_air_risk(rec)
-                rec.save()
 
+            # ============================================
+            # WATER
+            # ============================================
             elif monitoring_type == "water":
-                st, _ = WaterQualityStation.objects.get_or_create(
-                    name=name, latitude=lat, longitude=lon
+                st, created = WaterQualityStation.objects.get_or_create(
+                    name=name,
+                    defaults={"latitude": lat, "longitude": lon}
                 )
-                rec = WaterQualityRecord.objects.create(
+                if not created:
+                    st.latitude, st.longitude = lat, lon
+                    st.save()
+
+                WaterQualityRecord.objects.create(
                     station=st,
-                    ph=row.get("ph"),
-                    nitrates=row.get("nitrates"),
-                    conductivity=row.get("conductivity"),
+                    ph=float(row.get("ph")),
+                    nitrates=float(row.get("nitrates")),
+                    conductivity=float(row.get("conductivity")),
                     timestamp=timestamp
                 )
-                rec.risk_label = calc_water_risk(rec)
-                rec.save()
 
+            # ============================================
+            # SOIL
+            # ============================================
             elif monitoring_type == "soil":
-                st, _ = SoilQualityStation.objects.get_or_create(
-                    name=name, latitude=lat, longitude=lon
+                st, created = SoilQualityStation.objects.get_or_create(
+                    name=name,
+                    defaults={"latitude": lat, "longitude": lon}
                 )
-                rec = SoilQualityRecord.objects.create(
-                    station=st,
-                    heavy_metals=row.get("heavy_metals"),
-                    pesticides=row.get("pesticides"),
-                    ph=row.get("ph"),
-                    timestamp=timestamp
-                )
-                rec.risk_label = calc_soil_risk(rec)
-                rec.save()
+                if not created:
+                    st.latitude, st.longitude = lat, lon
+                    st.save()
 
-            elif monitoring_type == "radiation":
-                st, _ = RadiationStation.objects.get_or_create(
-                    name=name, latitude=lat, longitude=lon
-                )
-                rec = RadiationRecord.objects.create(
+                SoilQualityRecord.objects.create(
                     station=st,
-                    gamma=row.get("gamma"),
-                    beta=row.get("beta"),
-                    alpha=row.get("alpha"),
-                    ambient_dose_rate=row.get("ambient_dose_rate"),
+                    heavy_metals=float(row.get("heavy_metals")),
+                    pesticides=float(row.get("pesticides")),
+                    ph=float(row.get("ph")),
                     timestamp=timestamp
                 )
-                rec.risk_label = calc_radiation_risk(rec)
-                rec.save()
+
+            # ============================================
+            # RADIATION
+            # ============================================
+            elif monitoring_type == "radiation":
+                st, created = RadiationStation.objects.get_or_create(
+                    name=name,
+                    defaults={"latitude": lat, "longitude": lon}
+                )
+                if not created:
+                    st.latitude, st.longitude = lat, lon
+                    st.save()
+
+                RadiationRecord.objects.create(
+                    station=st,
+                    gamma=float(row.get("gamma")),
+                    beta=float(row.get("beta")),
+                    alpha=float(row.get("alpha")),
+                    ambient_dose_rate=float(row.get("ambient_dose_rate")),
+                    timestamp=timestamp
+                )
 
             count += 1
 
-        message = f"Файл успішно імпортовано. Додано {count} записів ({monitoring_type})."
+        message = f"Файл імпортовано. Додано {count} записів ({monitoring_type})."
 
     return render(request, "monitoring/upload_csv.html", {"message": message})
-
