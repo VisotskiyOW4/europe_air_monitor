@@ -1,13 +1,13 @@
 // ===============================
-// === Генерація кольору по ризику ===
+// === Колір маркерів за ризиком ===
 // ===============================
 function getColorByRisk(risk) {
     if (!risk) return "#999";
 
     const r = risk.toLowerCase();
-    if (r.includes("низь") || r.includes("low")) return "#2ecc71";    // зелений
-    if (r.includes("серед") || r.includes("medium")) return "#f1c40f"; // жовтий
-    if (r.includes("висок") || r.includes("high")) return "#e74c3c";   // червоний
+    if (r.includes("низь") || r.includes("low")) return "#2ecc71";      // зелений
+    if (r.includes("серед") || r.includes("medium")) return "#f1c40f";  // жовтий
+    if (r.includes("висок") || r.includes("high")) return "#e74c3c";    // червоний
     return "#7f8c8d";
 }
 
@@ -27,13 +27,14 @@ function makeRiskMarker(color) {
     });
 }
 
+// ===============================
+// === Рекомендації за станцією ===
+// ===============================
 function getAdvice(type, data) {
-    let risk = data.risk_label.toLowerCase();
-    let text = [];
+    const risk = (data.risk_label || "").toLowerCase();
+    const text = [];
 
-    // ------------------------
-    // AIR
-    // ------------------------
+    // ---- AIR ----
     if (type === "air") {
         if (risk.includes("висок")) {
             text.push("Уникайте тривалого перебування на вулиці.");
@@ -50,9 +51,7 @@ function getAdvice(type, data) {
         if (data.pm10 > 200) text.push("⚠ PM10 перевищує допустимі значення.");
     }
 
-    // ------------------------
-    // WATER
-    // ------------------------
+    // ---- WATER ----
     if (type === "water") {
         if (risk.includes("висок")) {
             text.push("Не використовуйте воду без фільтрації.");
@@ -69,9 +68,7 @@ function getAdvice(type, data) {
             text.push("⚠ Високий рівень нітратів — небезпечно для здоров'я.");
     }
 
-    // ------------------------
-    // SOIL
-    // ------------------------
+    // ---- SOIL ----
     if (type === "soil") {
         if (risk.includes("висок")) {
             text.push("Уникайте контакту з ґрунтом.");
@@ -88,9 +85,7 @@ function getAdvice(type, data) {
             text.push("⚠ Пестициди на небезпечному рівні.");
     }
 
-    // ------------------------
-    // RADIATION
-    // ------------------------
+    // ---- RADIATION ----
     if (type === "radiation") {
         if (risk.includes("висок")) {
             text.push("Уникайте перебування на відкритому повітрі.");
@@ -108,19 +103,19 @@ function getAdvice(type, data) {
     return text;
 }
 
-
 document.addEventListener("DOMContentLoaded", function () {
+    const mapElement = document.getElementById("map");
+    if (!mapElement) return;
 
-    // ============================
-    // === 1. Карта
-    // ============================
+    // --------------------------------
+    // 1. Карта
+    // --------------------------------
     const map = L.map("map").setView([50.45, 30.52], 5);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19
     }).addTo(map);
 
-    // Групи маркерів
     const layers = {
         air: L.layerGroup(),
         water: L.layerGroup(),
@@ -129,9 +124,9 @@ document.addEventListener("DOMContentLoaded", function () {
     };
     layers.air.addTo(map);
 
-    // ============================
-    // === 2. Назви параметрів
-    // ============================
+    // --------------------------------
+    // 2. Назви параметрів
+    // --------------------------------
     const PARAM_TITLES = {
         air: {
             pm25: "PM2.5",
@@ -162,9 +157,16 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     };
 
-    // ============================
-    // === 3. Завантаження API
-    // ============================
+    // --------------------------------
+    // 3. Глобальні змінні для графіка
+    // --------------------------------
+    let historyChart = null;
+    let chartMode = "history";      // "history" | "forecast"
+    let currentSelection = null;    // { type, id, data }
+
+    // --------------------------------
+    // 4. Завантаження станцій
+    // --------------------------------
     fetch("/api/global/")
         .then(res => res.json())
         .then(data => {
@@ -172,11 +174,10 @@ document.addEventListener("DOMContentLoaded", function () {
             renderMarkers(data.water, layers.water, "water");
             renderMarkers(data.soil, layers.soil, "soil");
             renderMarkers(data.radiation, layers.radiation, "radiation");
-        });
+        })
+        .catch(err => console.error("Помилка /api/global/:", err));
 
-    // ============================
-    // === 4. POPUP
-    // ============================
+    // POPUP
     function formatPopup(st, type) {
         let html = `<b>${st.name}</b><br>`;
         for (let key in PARAM_TITLES[type]) {
@@ -188,9 +189,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return html;
     }
 
-    // ============================
-    // === 5. Маркери
-    // ============================
+    // Маркери
     function renderMarkers(data, layer, type) {
         layer.clearLayers();
 
@@ -203,61 +202,104 @@ document.addEventListener("DOMContentLoaded", function () {
             marker.bindPopup(formatPopup(st, type));
 
             marker.on("click", () => {
+                currentSelection = { type: type, id: st.id, data: st };
                 updateDetailsPanel(st, type);
-                loadHistoryChart(type, st.id);
+                loadChart(type, st.id);
             });
 
             layer.addLayer(marker);
         });
     }
 
-    // ============================
-    // === 6. Графік (Chart.js)
-    // ============================
-    let historyChart = null;
+    // --------------------------------
+    // 5. Завантаження графіка (Історія / Прогноз)
+    // --------------------------------
+    function loadChart(type, stationId) {
+        const endpoint = chartMode === "forecast"
+            ? `/api/forecast/${type}/${stationId}/`
+            : `/api/history/${type}/${stationId}/`;
 
-    function loadHistoryChart(type, stationId) {
-        fetch(`/api/history/${type}/${stationId}/`)
+        fetch(endpoint)
             .then(r => r.json())
             .then(data => {
-                if (!data.timestamps || !data.values) return;
+                const labels = data.timestamps || [];
+                const values = data.values || [];
+                const param = data.param || "";
 
-                const ctx = document.getElementById("historyChart").getContext("2d");
-                if (historyChart) historyChart.destroy();
+                if (!labels.length || !values.length) {
+                    console.warn("Немає даних для графіка");
+                    return;
+                }
+
+                const canvas = document.getElementById("historyChart");
+                if (!canvas) return;
+                const ctx = canvas.getContext("2d");
+
+                if (historyChart) {
+                    historyChart.destroy();
+                }
+
+                const labelName =
+                    (PARAM_TITLES[type] && PARAM_TITLES[type][param]) ||
+                    param.toUpperCase();
 
                 historyChart = new Chart(ctx, {
                     type: "line",
                     data: {
-                        labels: data.timestamps,
+                        labels: labels,
                         datasets: [{
-                            label: PARAM_TITLES[type][data.param] || data.param,
-                            data: data.values,
+                            label: labelName,
+                            data: values,
                             borderWidth: 2,
-                            borderColor: "#3498db",
-                            pointRadius: 3,
-                            tension: 0.3
+                            tension: 0.25
                         }]
                     },
                     options: {
                         responsive: true,
                         scales: {
-                            x: { ticks: { maxRotation: 90, minRotation: 45 } },
-                            y: { beginAtZero: true }
+                            x: { ticks: { maxTicksLimit: 6 } }
                         }
                     }
                 });
-            });
+            })
+            .catch(err => console.error("Помилка завантаження графіка:", err));
     }
 
+    // Навішуємо обробники на кнопки режиму графіка
+    function attachChartModeHandlers() {
+        const buttons = document.querySelectorAll("#chart-mode button");
+        if (!buttons.length) return;
 
+        buttons.forEach(btn => {
+            btn.addEventListener("click", function () {
+                const mode = this.dataset.mode;
+                if (chartMode === mode) return;
 
-    // ============================
-    // === 7. Панель станції
-    // ============================
+                chartMode = mode;
+
+                buttons.forEach(b => {
+                    b.classList.remove("btn-primary", "active");
+                    b.classList.add("btn-outline-primary");
+                });
+
+                this.classList.remove("btn-outline-primary");
+                this.classList.add("btn-primary", "active");
+
+                if (currentSelection) {
+                    loadChart(currentSelection.type, currentSelection.id);
+                }
+            });
+        });
+    }
+
+    // --------------------------------
+    // 6. Панель станції справа
+    // --------------------------------
     function updateDetailsPanel(st, type) {
         const box = document.getElementById("station-details");
+        if (!box) return;
 
-        let html = `<h4>${st.name}</h4><ul>`;
+        let html = `<h5 class="fw-bold">${st.name}</h5><ul>`;
 
         for (let key in PARAM_TITLES[type]) {
             if (st[key] !== undefined) {
@@ -273,28 +315,45 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         html += `</ul>`;
 
-        // === Рекомендації ===
-        const advices = getAdvice(type, st);
-        html += `<h5 class="mt-3">Рекомендації</h5><ul>`;
-        advices.forEach(a => html += `<li>${a}</li>`);
-        html += `</ul>`;
+        // Рекомендації
+        const adv = getAdvice(type, st);
+        if (adv.length) {
+            html += `<h6 class="mt-3">Рекомендації</h6><ul>`;
+            adv.forEach(a => {
+                html += `<li>${a}</li>`;
+            });
+            html += `</ul>`;
+        }
 
-        // === Блок графіка ===
+        // Блок графіка + кнопки режиму
         html += `
-            <h5 class="mt-3">Динаміка показників</h5>
+            <h6 class="mt-3">Динаміка показників</h6>
+            <div class="btn-group btn-group-sm mb-2" id="chart-mode">
+                <button type="button"
+                        class="btn ${chartMode === "history" ? "btn-primary active" : "btn-outline-primary"}"
+                        data-mode="history">
+                    Історія
+                </button>
+                <button type="button"
+                        class="btn ${chartMode === "forecast" ? "btn-primary active" : "btn-outline-primary"}"
+                        data-mode="forecast">
+                    Прогноз
+                </button>
+            </div>
             <div id="chart-container">
-                <canvas id="historyChart" height="200"></canvas>
+                <canvas id="historyChart" height="180"></canvas>
             </div>
         `;
 
         box.innerHTML = html;
+
+        // Після того як HTML вставлено — чіпляємо обробники кнопок
+        attachChartModeHandlers();
     }
 
-
-
-    // ============================
-    // === 8. Перемикання шарів
-    // ============================
+    // --------------------------------
+    // 7. Перемикання шарів карти
+    // --------------------------------
     document.querySelectorAll("input[name='layer']").forEach(radio => {
         radio.addEventListener("change", function () {
             Object.values(layers).forEach(l => map.removeLayer(l));
