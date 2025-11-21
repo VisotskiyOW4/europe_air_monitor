@@ -103,6 +103,33 @@ function getAdvice(type, data) {
     return text;
 }
 
+function formatDateShort(ts) {
+        return new Date(ts).toLocaleString("uk-UA", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit"
+        }).replace(",", "");
+    }
+
+function normalizeDate(ts) {
+    // Якщо є T — ISO формат
+    if (ts.includes("T")) {
+        return ts.split("T")[0];
+    }
+
+    // Якщо формат Django (напр. "Nov. 17, 2025, 11:40 a.m.")
+    const parsed = new Date(ts);
+    if (!isNaN(parsed)) {
+        return parsed.toISOString().split("T")[0];
+    }
+
+    // fallback
+    return null;
+}
+
+
 document.addEventListener("DOMContentLoaded", function () {
     const mapElement = document.getElementById("map");
     if (!mapElement) return;
@@ -167,13 +194,13 @@ document.addEventListener("DOMContentLoaded", function () {
     // --------------------------------
     // 4. Завантаження станцій
     // --------------------------------
-    fetch("/api/global/")
+    let globalData = null;
+    let selectedDate = null;
+    fetch(`/api/global/?date=${selectedDate || ""}`)
         .then(res => res.json())
         .then(data => {
-            renderMarkers(data.air, layers.air, "air");
-            renderMarkers(data.water, layers.water, "water");
-            renderMarkers(data.soil, layers.soil, "soil");
-            renderMarkers(data.radiation, layers.radiation, "radiation");
+            globalData = data;
+            renderAllLayers();
         })
         .catch(err => console.error("Помилка /api/global/:", err));
 
@@ -185,7 +212,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 html += `${PARAM_TITLES[type][key]}: ${st[key]}<br>`;
             }
         }
-        html += `<small>${st.timestamp}</small>`;
+        html += `<small>${formatDateShort(st.timestamp)}</small>`;
         return html;
     }
 
@@ -211,6 +238,29 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    function filterByDate(records) {
+        if (!selectedDate) return records;
+        return records.filter(st => normalizeDate(st.timestamp) === selectedDate);
+    }
+
+    function renderAllLayers() {
+        const total = [
+        filterByDate(globalData.air).length,
+        filterByDate(globalData.water).length,
+        filterByDate(globalData.soil).length,
+        filterByDate(globalData.radiation).length
+    ].reduce((a,b)=>a+b,0);
+
+    if (total === 0) {
+        alert("Немає даних за вибрану дату!");
+    }
+        renderMarkers(filterByDate(globalData.air), layers.air, "air");
+        renderMarkers(filterByDate(globalData.water), layers.water, "water");
+        renderMarkers(filterByDate(globalData.soil), layers.soil, "soil");
+        renderMarkers(filterByDate(globalData.radiation), layers.radiation, "radiation");
+    }
+
+
     // --------------------------------
     // 5. Завантаження графіка (Історія / Прогноз)
     // --------------------------------
@@ -222,8 +272,8 @@ document.addEventListener("DOMContentLoaded", function () {
         fetch(endpoint)
             .then(r => r.json())
             .then(data => {
-                const labels = data.timestamps || [];
-                const values = data.values || [];
+                let labels = data.timestamps || [];
+                let values = data.values || [];
                 const param = data.param || "";
 
                 if (!labels.length || !values.length) {
@@ -243,6 +293,19 @@ document.addEventListener("DOMContentLoaded", function () {
                     (PARAM_TITLES[type] && PARAM_TITLES[type][param]) ||
                     param.toUpperCase();
 
+                if (selectedDate) {
+                    const newLabels = [];
+                    const newValues = [];
+                    labels.forEach((ts, i) => {
+                        if (normalizeDate(ts) === selectedDate) {
+                            newLabels.push(ts);
+                            newValues.push(values[i]);
+                        }
+                    });
+                    labels = newLabels;
+                    values = newValues;
+                }
+
                 historyChart = new Chart(ctx, {
                     type: "line",
                     data: {
@@ -255,6 +318,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         }]
                     },
                     options: {
+                        maintainAspectRatio: false,
                         responsive: true,
                         scales: {
                             x: { ticks: { maxTicksLimit: 6 } }
@@ -267,7 +331,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Навішуємо обробники на кнопки режиму графіка
     function attachChartModeHandlers() {
-        const buttons = document.querySelectorAll("#chart-mode button");
+        const buttons = document.querySelectorAll("#chart-mode-global button");
         if (!buttons.length) return;
 
         buttons.forEach(btn => {
@@ -322,33 +386,11 @@ document.addEventListener("DOMContentLoaded", function () {
             adv.forEach(a => {
                 html += `<li>${a}</li>`;
             });
-            html += `</ul>`;
+            html += `</ul>
+                    <div class="text-muted small">${formatDateShort(st.timestamp)}</div>`;
         }
 
-        // Блок графіка + кнопки режиму
-        html += `
-            <h6 class="mt-3">Динаміка показників</h6>
-            <div class="btn-group btn-group-sm mb-2" id="chart-mode">
-                <button type="button"
-                        class="btn ${chartMode === "history" ? "btn-primary active" : "btn-outline-primary"}"
-                        data-mode="history">
-                    Історія
-                </button>
-                <button type="button"
-                        class="btn ${chartMode === "forecast" ? "btn-primary active" : "btn-outline-primary"}"
-                        data-mode="forecast">
-                    Прогноз
-                </button>
-            </div>
-            <div id="chart-container">
-                <canvas id="historyChart" height="180"></canvas>
-            </div>
-        `;
-
         box.innerHTML = html;
-
-        // Після того як HTML вставлено — чіпляємо обробники кнопок
-        attachChartModeHandlers();
     }
 
     // --------------------------------
@@ -361,4 +403,16 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
+    const dateInput = document.getElementById("global-date");
+    const applyBtn = document.getElementById("apply-global-filter");
+
+    if (applyBtn && dateInput) {
+        applyBtn.addEventListener("click", () => {
+            selectedDate = dateInput.value || null;
+            renderAllLayers();
+            historyChart && currentSelection && loadChart(currentSelection.type, currentSelection.id);
+        });
+    }
+
+    attachChartModeHandlers();
 });

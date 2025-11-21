@@ -9,6 +9,16 @@ from monitoring.soil.models import SoilQualityStation, SoilQualityRecord
 from monitoring.radiation.models import RadiationStation, RadiationRecord
 
 
+# ================================
+# 🔹 Функція для безпечного округлення
+# ================================
+def f(value):
+    try:
+        return round(float(str(value).strip()), 2)
+    except:
+        return None
+
+
 def detect_monitoring_type(headers):
     headers = [h.lower().strip() for h in headers]
 
@@ -46,51 +56,48 @@ def upload_csv(request):
 
         for row in reader:
 
-            # --- очищення та перевірка загальних полів ---
+            # === Очищення полів ===
             name = (row.get("name") or row.get("station") or "").strip()
             if not name:
-                continue  # пропускаємо некоректний рядок
+                continue
 
             try:
-                lat = float(str(row.get("latitude")).strip())
-                lon = float(str(row.get("longitude")).strip())
+                lat = f(row.get("latitude"))
+                lon = f(row.get("longitude"))
             except:
-                continue  # пропуск якщо координати не читаються
+                continue
 
-            # timestamp
             ts = str(row.get("timestamp")).strip()
             try:
                 timestamp = datetime.fromisoformat(ts)
             except:
                 timestamp = timezone.now()
 
-            # ============================================
-            # AIR
-            # ============================================
+            # ===============================
+            # 🌫 AIR
+            # ===============================
             if monitoring_type == "air":
                 st, created = AirQualityStation.objects.get_or_create(
                     name=name,
                     defaults={"latitude": lat, "longitude": lon}
                 )
-
-                # оновлення координат якщо станція існувала
                 if not created:
                     st.latitude, st.longitude = lat, lon
                     st.save()
 
                 AirQualityRecord.objects.create(
                     station=st,
-                    pm25=float(row.get("pm25")),
-                    pm10=float(row.get("pm10")),
-                    co=float(row.get("co")),
-                    no2=float(row.get("no2")),
-                    o3=float(row.get("o3")),
+                    pm25=f(row.get("pm25")),
+                    pm10=f(row.get("pm10")),
+                    co=f(row.get("co")),
+                    no2=f(row.get("no2")),
+                    o3=f(row.get("o3")),
                     timestamp=timestamp
                 )
 
-            # ============================================
-            # WATER
-            # ============================================
+            # ===============================
+            # 💧 WATER
+            # ===============================
             elif monitoring_type == "water":
                 st, created = WaterQualityStation.objects.get_or_create(
                     name=name,
@@ -102,15 +109,15 @@ def upload_csv(request):
 
                 WaterQualityRecord.objects.create(
                     station=st,
-                    ph=float(row.get("ph")),
-                    nitrates=float(row.get("nitrates")),
-                    conductivity=float(row.get("conductivity")),
+                    ph=f(row.get("ph")),
+                    nitrates=f(row.get("nitrates")),
+                    conductivity=f(row.get("conductivity")),
                     timestamp=timestamp
                 )
 
-            # ============================================
-            # SOIL
-            # ============================================
+            # ===============================
+            # 🌱 SOIL
+            # ===============================
             elif monitoring_type == "soil":
                 st, created = SoilQualityStation.objects.get_or_create(
                     name=name,
@@ -122,15 +129,15 @@ def upload_csv(request):
 
                 SoilQualityRecord.objects.create(
                     station=st,
-                    heavy_metals=float(row.get("heavy_metals")),
-                    pesticides=float(row.get("pesticides")),
-                    ph=float(row.get("ph")),
+                    heavy_metals=f(row.get("heavy_metals")),
+                    pesticides=f(row.get("pesticides")),
+                    ph=f(row.get("ph")),
                     timestamp=timestamp
                 )
 
-            # ============================================
-            # RADIATION
-            # ============================================
+            # ===============================
+            # ☢ RADIATION
+            # ===============================
             elif monitoring_type == "radiation":
                 st, created = RadiationStation.objects.get_or_create(
                     name=name,
@@ -142,10 +149,10 @@ def upload_csv(request):
 
                 RadiationRecord.objects.create(
                     station=st,
-                    gamma=float(row.get("gamma")),
-                    beta=float(row.get("beta")),
-                    alpha=float(row.get("alpha")),
-                    ambient_dose_rate=float(row.get("ambient_dose_rate")),
+                    gamma=f(row.get("gamma")),
+                    beta=f(row.get("beta")),
+                    alpha=f(row.get("alpha")),
+                    ambient_dose_rate=f(row.get("ambient_dose_rate")),
                     timestamp=timestamp
                 )
 

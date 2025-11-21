@@ -2,48 +2,70 @@
 {% load static %}
 
 {% block content %}
+<style>
+    #chart-wrapper {
+        height: 380px;        /* фіксована висота */
+        padding: 10px;
+    }
+    #historyChart {
+        width: 100% !important;
+        height: 100% !important;
+    }
+</style>
+
 <div class="container-fluid">
     <h2 class="text-center my-4">Система глобального моніторингу навколишнього середовища</h2>
 
     <div class="row">
-        <!-- Ліва частина: мапа -->
+
+        <!-- Ліва частина: мапа + графік -->
         <div class="col-md-9">
+
+            <!-- Мапа -->
             <div id="map" style="height: 650px; border-radius: 10px;"></div>
+
+            <!-- Графік ПІД картою -->
+            <div class="card p-3 mt-3">
+                <h5 class="fw-bold mb-3">Динаміка показників</h5>
+
+                <div class="btn-group btn-group-sm mb-2" id="chart-mode-global">
+                    <button type="button" class="btn btn-primary active" data-mode="history">Історія</button>
+                    <button type="button" class="btn btn-outline-primary" data-mode="forecast">Прогноз</button>
+                </div>
+
+                <div id="chart-wrapper">
+                    <canvas id="historyChart"></canvas>
+                </div>
+            </div>
+
         </div>
 
         <!-- Права панель -->
         <div class="col-md-3">
+            <div class="card p-2 mb-3">
+                <label class="fw-bold">Дата:</label>
+                <input type="date" class="form-control form-control-sm" id="global-date">
+                <button class="btn btn-sm btn-primary w-100 mt-2" id="apply-global-filter">
+                    Показати
+                </button>
+            </div>
 
             <!-- Вибір шару -->
             <div class="card p-3 mb-3">
                 <h5 class="fw-bold">Обраний шар</h5>
 
-                <label>
-                    <input type="radio" name="layer" value="air" checked>
-                    Якість повітря
-                </label><br>
-                <label>
-                    <input type="radio" name="layer" value="water">
-                    Якість води
-                </label><br>
-                <label>
-                    <input type="radio" name="layer" value="soil">
-                    Ґрунт
-                </label><br>
-                <label>
-                    <input type="radio" name="layer" value="radiation">
-                    Радіаційний фон
-                </label>
+                <label><input type="radio" name="layer" value="air" checked> Якість повітря</label><br>
+                <label><input type="radio" name="layer" value="water"> Якість води</label><br>
+                <label><input type="radio" name="layer" value="soil"> Ґрунт</label><br>
+                <label><input type="radio" name="layer" value="radiation"> Радіаційний фон</label>
             </div>
 
             <!-- Деталі станції -->
             <div class="card p-3 mb-3" id="station-details">
                 <h5 class="fw-bold">Детальна інформація про станцію</h5>
                 <div class="text-muted">Виберіть станцію на мапі…</div>
-                <div id="chart-container">
-                    <canvas id="historyChart" height="200"></canvas>
-                </div>
             </div>
+
         </div>
     </div>
 </div>
