@@ -8,6 +8,10 @@ from monitoring.water.models import WaterQualityStation, WaterQualityRecord
 from monitoring.soil.models import SoilQualityStation, SoilQualityRecord
 from monitoring.radiation.models import RadiationStation, RadiationRecord
 
+from monitoring.air.ml.train_air import train_air_model
+from monitoring.water.ml.train_water import train_water_model
+from monitoring.soil.ml.train_soil import train_soil_model
+from monitoring.radiation.ml.train_radiation import train_radiation_model
 
 # ================================
 # 🔹 Функція для безпечного округлення
@@ -158,6 +162,16 @@ def upload_csv(request):
 
             count += 1
 
-        message = f"Файл імпортовано. Додано {count} записів ({monitoring_type})."
+        # === Після завершення імпорту — тренуємо модель ===
+        if monitoring_type == "air":
+            train_air_model()
+        elif monitoring_type == "water":
+            train_water_model()
+        elif monitoring_type == "soil":
+            train_soil_model()
+        elif monitoring_type == "radiation":
+            train_radiation_model()
+
+        message = f"Файл імпортовано. Додано {count} записів ({monitoring_type}). Модель оновлено."
 
     return render(request, "monitoring/upload_csv.html", {"message": message})

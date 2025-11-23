@@ -1,10 +1,13 @@
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
+from datetime import timedelta
 
 from monitoring.air.models import AirQualityStation, AirQualityRecord
 from monitoring.water.models import WaterQualityStation, WaterQualityRecord
 from monitoring.soil.models import SoilQualityStation, SoilQualityRecord
 from monitoring.radiation.models import RadiationStation, RadiationRecord
+
+from monitoring.utils.forecast import lstm_forecast
 
 from monitoring.utils.fuzzy_logic import (
     calc_air_risk,
@@ -13,127 +16,87 @@ from monitoring.utils.fuzzy_logic import (
     calc_radiation_risk,
 )
 
+# ==============================================================
+#  GLOBAL DATA API + DATE FILTER
+# ==============================================================
 
 def api_global(request):
-    # Отримуємо ?date=YYYY-MM-DD
+
     selected_date = request.GET.get("date", None)
 
-    result = {
-        "air": [],
-        "water": [],
-        "soil": [],
-        "radiation": []
-    }
+    result = {"air": [], "water": [], "soil": [], "radiation": []}
 
-    # Універсальна функція фільтрації по даті
-    def get_record_or_last(model, station):
+    # Універсальна функція пошуку запису по даті/або останнього
+    from datetime import datetime
+
+    def get_record_by_date(model, station, selected_date):
         qs = model.objects.filter(station=station)
 
+        # Якщо користувач вибрав дату
         if selected_date:
-            rec = qs.filter(timestamp__date=selected_date).order_by('-timestamp').first()
-            if rec:
-                return rec
+            try:
+                # Перетворюємо на справжню дату
+                d = datetime.strptime(selected_date, "%Y-%m-%d").date()
 
-        # Якщо немає записів за дату — повертаємо останній
+                # Фільтруємо тільки по ДНЮ
+                rec = qs.filter(timestamp__date=d).order_by('-timestamp').first()
+                if rec:
+                    return rec
+            except:
+                pass
+
+        # Якщо немає співпадіння — повертаємо останній запис
         return qs.order_by('-timestamp').first()
 
-    # =========================================
-    # AIR QUALITY
-    # =========================================
+
+
+    # Універсальна функція додавання в результат
+    def add_data(category, station, record, fields, fuzzy_func):
+        data = {f: getattr(record, f) for f in fields}
+        fuzzy = fuzzy_func(data)
+        result[category].append({
+            "id": station.id,
+            "name": station.name,
+            "lat": station.latitude,
+            "lon": station.longitude,
+            **data,
+            "risk_score": fuzzy["risk_score"],
+            "risk_label": fuzzy["risk_label"],
+            "timestamp": record.timestamp,
+        })
+
+    # AIR
     for s in AirQualityStation.objects.all():
-        r = get_record_or_last(AirQualityRecord, s)
+        r = get_record_by_date(AirQualityRecord, s, selected_date)
         if r:
-            data = {
-                "pm25": r.pm25,
-                "pm10": r.pm10,
-                "co": r.co,
-                "no2": r.no2,
-                "o3": r.o3,
-            }
-            fuzzy = calc_air_risk(data)
-            result["air"].append({
-                "id": s.id,
-                "name": s.name,
-                "lat": s.latitude,
-                "lon": s.longitude,
-                **data,
-                "risk_score": fuzzy["risk_score"],
-                "risk_label": fuzzy["risk_label"],
-                "timestamp": r.timestamp,
-            })
+            add_data("air", s, r, ["pm25", "pm10", "co", "no2", "o3"], calc_air_risk)
 
-    # =========================================
-    # WATER QUALITY
-    # =========================================
+    # WATER
     for s in WaterQualityStation.objects.all():
-        r = get_record_or_last(WaterQualityRecord, s)
+        r = get_record_by_date(WaterQualityRecord, s, selected_date)
         if r:
-            data = {
-                "ph": r.ph,
-                "nitrates": r.nitrates,
-                "conductivity": r.conductivity,
-            }
-            fuzzy = calc_water_risk(data)
-            result["water"].append({
-                "id": s.id,
-                "name": s.name,
-                "lat": s.latitude,
-                "lon": s.longitude,
-                **data,
-                "risk_score": fuzzy["risk_score"],
-                "risk_label": fuzzy["risk_label"],
-                "timestamp": r.timestamp,
-            })
+            add_data("water", s, r, ["ph", "nitrates", "conductivity"], calc_water_risk)
 
-    # =========================================
-    # SOIL QUALITY
-    # =========================================
+    # SOIL
     for s in SoilQualityStation.objects.all():
-        r = get_record_or_last(SoilQualityRecord, s)
+        r = get_record_by_date(SoilQualityRecord, s, selected_date)
         if r:
-            data = {
-                "heavy_metals": r.heavy_metals,
-                "pesticides": r.pesticides,
-                "ph": r.ph,
-            }
-            fuzzy = calc_soil_risk(data)
-            result["soil"].append({
-                "id": s.id,
-                "name": s.name,
-                "lat": s.latitude,
-                "lon": s.longitude,
-                **data,
-                "risk_score": fuzzy["risk_score"],
-                "risk_label": fuzzy["risk_label"],
-                "timestamp": r.timestamp,
-            })
+            add_data("soil", s, r, ["heavy_metals", "pesticides", "ph"], calc_soil_risk)
 
-    # =========================================
-    # RADIATION MONITORING
-    # =========================================
+    # RADIATION
     for s in RadiationStation.objects.all():
-        r = get_record_or_last(RadiationRecord, s)
+        r = get_record_by_date(RadiationRecord, s, selected_date)
         if r:
-            data = {
-                "gamma": r.gamma,
-                "beta": r.beta,
-                "alpha": r.alpha,
-                "ambient_dose_rate": r.ambient_dose_rate
-            }
-            fuzzy = calc_radiation_risk(data)
-            result["radiation"].append({
-                "id": s.id,
-                "name": s.name,
-                "lat": s.latitude,
-                "lon": s.longitude,
-                **data,
-                "risk_score": fuzzy["risk_score"],
-                "risk_label": fuzzy["risk_label"],
-                "timestamp": r.timestamp,
-            })
+            add_data("radiation", s, r,
+                     ["gamma", "beta", "alpha", "ambient_dose_rate"],
+                     calc_radiation_risk)
 
-    return JsonResponse(result, safe=False)
+    return JsonResponse(result)
 
+
+# ==============================================================
+#  HISTORY DATA API (для графіку)
+# ==============================================================
 
 def api_history(request, category, station_id):
     model_map = {
@@ -147,11 +110,6 @@ def api_history(request, category, station_id):
         return JsonResponse({"error": "Unknown category"}, status=400)
 
     StationModel, RecordModel = model_map[category]
-
-    # ВАЖЛИВО: видаляємо лишні пробіли
-    station_name = station_name.strip()
-
-    # Пошук станції
     station = get_object_or_404(StationModel, id=station_id)
 
     records = RecordModel.objects.filter(station=station).order_by("timestamp")
@@ -169,5 +127,43 @@ def api_history(request, category, station_id):
                     pass
         data.append(entry)
 
-    return JsonResponse({"station": station_name, "history": data})
+    return JsonResponse({"station": station.name, "history": data})
 
+
+# ==============================================================
+#  FORECAST API (LSTM)
+# ==============================================================
+
+def api_forecast(request, category, station_id):
+    model_map = {
+        "air": (AirQualityStation, AirQualityRecord, ["pm25", "pm10", "co", "no2", "o3"]),
+        "water": (WaterQualityStation, WaterQualityRecord, ["ph", "nitrates", "conductivity"]),
+        "soil": (SoilQualityStation, SoilQualityRecord, ["heavy_metals", "pesticides", "ph"]),
+        "radiation": (RadiationStation, RadiationRecord, ["gamma", "beta", "alpha", "ambient_dose_rate"]),
+    }
+
+    if category not in model_map:
+        return JsonResponse({"error": "Unknown category"}, status=400)
+
+    StationModel, RecordModel, fields = model_map[category]
+    station = get_object_or_404(StationModel, id=station_id)
+
+    records = RecordModel.objects.filter(station=station).order_by("timestamp")
+
+    # Прогнозуємо лише перший параметр у списку (потрібно для графіка)
+    param = fields[0]
+    values = [float(getattr(r, param)) for r in records]
+
+    # Прогноз 48 точок (2 доби по годинах)
+    predictions = lstm_forecast(values, steps=48)
+
+    timestamps = []
+    last_ts = records.last().timestamp
+    for i in range(len(predictions)):
+        timestamps.append(last_ts + timedelta(hours=i+1))
+
+    return JsonResponse({
+        "param": param,
+        "timestamps": timestamps,
+        "values": predictions,
+    })

@@ -4,12 +4,20 @@
 {% block content %}
 <style>
     #chart-wrapper {
-        height: 380px;        /* фіксована висота */
+        height: 380px;
         padding: 10px;
     }
     #historyChart {
         width: 100% !important;
         height: 100% !important;
+    }
+    /* Правий блок - компактніше */
+    #station-details ul {
+        padding-left: 18px;
+        margin-bottom: 6px;
+    }
+    #station-details li {
+        margin-bottom: 4px;
     }
 </style>
 
@@ -19,12 +27,12 @@
     <div class="row">
 
         <!-- Ліва частина: мапа + графік -->
-        <div class="col-md-9">
+        <div class="col-lg-9 col-md-8">
 
             <!-- Мапа -->
             <div id="map" style="height: 650px; border-radius: 10px;"></div>
 
-            <!-- Графік ПІД картою -->
+            <!-- Графік під картою -->
             <div class="card p-3 mt-3">
                 <h5 class="fw-bold mb-3">Динаміка показників</h5>
 
@@ -41,12 +49,14 @@
         </div>
 
         <!-- Права панель -->
-        <div class="col-md-3">
+        <div class="col-lg-3 col-md-4">
+
+            <!-- Вибір дати -->
             <div class="card p-2 mb-3">
-                <label class="fw-bold">Дата:</label>
-                <input type="date" class="form-control form-control-sm" id="global-date">
+                <label class="fw-bold" for="global-date">Дата:</label>
+                <input type="date" class="form-control form-control-sm" id="global-date" lang="uk">
                 <button class="btn btn-sm btn-primary w-100 mt-2" id="apply-global-filter">
-                    Показати
+                    Показати дані
                 </button>
             </div>
 

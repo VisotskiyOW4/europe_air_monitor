@@ -114,18 +114,12 @@ function formatDateShort(ts) {
     }
 
 function normalizeDate(ts) {
-    // Якщо є T — ISO формат
-    if (ts.includes("T")) {
-        return ts.split("T")[0];
-    }
-
-    // Якщо формат Django (напр. "Nov. 17, 2025, 11:40 a.m.")
-    const parsed = new Date(ts);
-    if (!isNaN(parsed)) {
-        return parsed.toISOString().split("T")[0];
-    }
-
-    // fallback
+    try {
+        const d = new Date(ts);
+        if (!isNaN(d.getTime())) {
+            return d.toISOString().split("T")[0]; // YYYY-MM-DD
+        }
+    } catch(e) {}
     return null;
 }
 
@@ -240,7 +234,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function filterByDate(records) {
         if (!selectedDate) return records;
-        return records.filter(st => normalizeDate(st.timestamp) === selectedDate);
+        return records.filter(st => normalizeDate(st.timestamp) == selectedDate);
     }
 
     function renderAllLayers() {
@@ -253,11 +247,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (total === 0) {
         alert("Немає даних за вибрану дату!");
+        return;
     }
-        renderMarkers(filterByDate(globalData.air), layers.air, "air");
-        renderMarkers(filterByDate(globalData.water), layers.water, "water");
-        renderMarkers(filterByDate(globalData.soil), layers.soil, "soil");
-        renderMarkers(filterByDate(globalData.radiation), layers.radiation, "radiation");
     }
 
 
@@ -306,25 +297,42 @@ document.addEventListener("DOMContentLoaded", function () {
                     values = newValues;
                 }
 
+                const isForecast = chartMode === "forecast";
+
                 historyChart = new Chart(ctx, {
                     type: "line",
                     data: {
                         labels: labels,
                         datasets: [{
-                            label: labelName,
+                            label: labelName + (isForecast ? " (прогноз)" : ""),
                             data: values,
+                            borderColor: isForecast ? "#ff5733" : "#007bff",
+                            backgroundColor: isForecast ? "rgba(255, 87, 51, 0.1)" : "rgba(0, 123, 255, 0.1)",
                             borderWidth: 2,
-                            tension: 0.25
+                            borderDash: isForecast ? [6, 6] : [],
+                            tension: isForecast ? 0.5 : 0.25,
+                            pointRadius: isForecast ? 0 : 2
                         }]
                     },
                     options: {
                         maintainAspectRatio: false,
                         responsive: true,
                         scales: {
-                            x: { ticks: { maxTicksLimit: 6 } }
+                            y: {
+                                beginAtZero: false,   // Авто масштабування осі Y
+                                ticks: { color: "#333" }
+                            },
+                            x: {
+                                ticks: { maxTicksLimit: 7, color: "#333" }
+                            }
+                        },
+                        plugins: {
+                            legend: { labels: { color: "#000", font: { size: 13 } } },
+                            tooltip: { enabled: true }
                         }
                     }
                 });
+
             })
             .catch(err => console.error("Помилка завантаження графіка:", err));
     }
