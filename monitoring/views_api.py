@@ -1,6 +1,13 @@
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404
 from datetime import timedelta
+import numpy as np
+import joblib
+from monitoring.ml.ml_utils import (
+    load_lstm_model,
+    prepare_lstm_data,
+)
+from monitoring.ml.scalers import load_scaler
 
 from monitoring.air.models import AirQualityStation, AirQualityRecord
 from monitoring.water.models import WaterQualityStation, WaterQualityRecord
@@ -14,6 +21,13 @@ from monitoring.utils.fuzzy_logic import (
     calc_water_risk,
     calc_soil_risk,
     calc_radiation_risk,
+)
+
+from monitoring.utils.forecast_ml import (
+    forecast_air,
+    forecast_water,
+    forecast_soil,
+    forecast_radiation,
 )
 
 # ==============================================================
@@ -32,23 +46,30 @@ def api_global(request):
     def get_record_by_date(model, station, selected_date):
         qs = model.objects.filter(station=station)
 
-        # Якщо користувач вибрав дату
-        if selected_date:
-            try:
-                # Перетворюємо на справжню дату
-                d = datetime.strptime(selected_date, "%Y-%m-%d").date()
+        from datetime import datetime
 
-                # Фільтруємо тільки по ДНЮ
-                rec = qs.filter(timestamp__date=d).order_by('-timestamp').first()
-                if rec:
-                    return rec
+        if selected_date:
+            d = None
+
+            # формат YYYY-MM-DD
+            try:
+                d = datetime.strptime(selected_date, "%Y-%m-%d").date()
             except:
                 pass
 
-        # Якщо немає співпадіння — повертаємо останній запис
+            # формат DD.MM.YYYY
+            if d is None:
+                try:
+                    d = datetime.strptime(selected_date, "%d.%m.%Y").date()
+                except:
+                    pass
+
+            if d:
+                rec = qs.filter(timestamp__date=d).order_by('-timestamp').first()
+                if rec:
+                    return rec
+
         return qs.order_by('-timestamp').first()
-
-
 
     # Універсальна функція додавання в результат
     def add_data(category, station, record, fields, fuzzy_func):
@@ -135,35 +156,133 @@ def api_history(request, category, station_id):
 # ==============================================================
 
 def api_forecast(request, category, station_id):
+    """
+    API прогнозу на основі натренованих моделей
+    Підтримує параметр days: ?days=3,7,30
+    """
+
+    # Зчитуємо параметр "days"
+    try:
+        days = int(request.GET.get("days", 3))
+        if days not in [3, 7, 30]:
+            return HttpResponseBadRequest("Invalid 'days' parameter")
+    except:
+        return HttpResponseBadRequest("Invalid 'days' parameter")
+
+    # Відповідність категорій та моделей
     model_map = {
-        "air": (AirQualityStation, AirQualityRecord, ["pm25", "pm10", "co", "no2", "o3"]),
-        "water": (WaterQualityStation, WaterQualityRecord, ["ph", "nitrates", "conductivity"]),
-        "soil": (SoilQualityStation, SoilQualityRecord, ["heavy_metals", "pesticides", "ph"]),
-        "radiation": (RadiationStation, RadiationRecord, ["gamma", "beta", "alpha", "ambient_dose_rate"]),
+        "air": {
+            "station": AirQualityStation,
+            "record": AirQualityRecord,
+            "fields": ["pm25", "pm10"],
+            "model": "air_lstm"
+        },
+        "water": {
+            "station": WaterQualityStation,
+            "record": WaterQualityRecord,
+            "fields": ["ph", "nitrates"],
+            "model": "water_gru"
+        },
+        "soil": {
+            "station": SoilQualityStation,
+            "record": SoilQualityRecord,
+            "fields": ["heavy_metals", "pesticides"],
+            "model": "soil_rf"
+        },
+        "radiation": {
+            "station": RadiationStation,
+            "record": RadiationRecord,
+            "fields": ["ambient_dose_rate"],
+            "model": "radiation_lstm"
+        }
     }
 
     if category not in model_map:
         return JsonResponse({"error": "Unknown category"}, status=400)
 
-    StationModel, RecordModel, fields = model_map[category]
-    station = get_object_or_404(StationModel, id=station_id)
+    cfg = model_map[category]
 
+    # Отримуємо станцію та її записи
+    StationModel = cfg["station"]
+    RecordModel = cfg["record"]
+    fields = cfg["fields"]
+
+    station = get_object_or_404(StationModel, id=station_id)
     records = RecordModel.objects.filter(station=station).order_by("timestamp")
 
-    # Прогнозуємо лише перший параметр у списку (потрібно для графіка)
-    param = fields[0]
-    values = [float(getattr(r, param)) for r in records]
+    if not records.exists():
+        return JsonResponse({"error": "No data for station"}, status=404)
 
-    # Прогноз 48 точок (2 доби по годинах)
-    predictions = lstm_forecast(values, steps=48)
+    # ------------------------------------------------------------
+    # Завантаження моделі та scaler
+    # ------------------------------------------------------------
+    model_name = cfg["model"]
+    model_path = f"monitoring/ml/models/{category}/{model_name}.keras"
+    scaler_path = f"monitoring/ml/models/{category}/{model_name}_scaler.pkl"
 
-    timestamps = []
+    try:
+        model = load_lstm_model(model_path) if "lstm" in model_name else joblib.load(model_path)
+    except Exception as e:
+        return JsonResponse({"error": f"Cannot load model: {e}"} , status=500)
+
+    try:
+        scaler = load_scaler(scaler_path)
+    except:
+        scaler = None
+
+    # ------------------------------------------------------------
+    # Формуємо вектор останніх значень
+    # ------------------------------------------------------------
+    values = np.array([[float(getattr(r, f)) for f in fields] for r in records])
+
+    # Масштабування
+    if scaler:
+        values_scaled = scaler.transform(values)
+    else:
+        values_scaled = values
+
+    # ------------------------------------------------------------
+    # Прогноз
+    # ------------------------------------------------------------
+    if "rf" in model_name:  
+        # Random Forest (soil)
+        last_vec = values_scaled[-1]
+        forecasts = []
+        for i in range(days):
+            pred = model.predict([last_vec])[0]
+            last_vec = pred  
+            forecasts.append(pred.tolist())
+
+    else:
+        # LSTM / GRU
+        X = prepare_lstm_data(values_scaled, seq_len=30)
+        X_last = X[-1].reshape(1, X.shape[1], X.shape[2])
+
+        preds = model.predict(X_last)[0]  # прогноз довжини N
+        forecasts = []
+
+        for i in range(days):
+            idx = min(i, len(preds) - 1)
+            forecasts.append(preds[idx].tolist())
+
+    # ------------------------------------------------------------
+    # Денормалізація
+    # ------------------------------------------------------------
+    if scaler:
+        forecasts_unscaled = scaler.inverse_transform(forecasts).tolist()
+    else:
+        forecasts_unscaled = forecasts
+
+    # ------------------------------------------------------------
+    # Генеруємо майбутні timestamps
+    # ------------------------------------------------------------
     last_ts = records.last().timestamp
-    for i in range(len(predictions)):
-        timestamps.append(last_ts + timedelta(hours=i+1))
+    timestamps = [(last_ts + timedelta(days=i+1)).isoformat() for i in range(days)]
 
     return JsonResponse({
-        "param": param,
+        "station": station.name,
+        "fields": fields,
         "timestamps": timestamps,
-        "values": predictions,
+        "values": forecasts_unscaled
     })
+

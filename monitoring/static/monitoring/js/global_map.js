@@ -184,6 +184,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let historyChart = null;
     let chartMode = "history";      // "history" | "forecast"
     let currentSelection = null;    // { type, id, data }
+    let forecastDays = 3;
 
     // --------------------------------
     // 4. Завантаження станцій
@@ -238,17 +239,24 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function renderAllLayers() {
-        const total = [
-        filterByDate(globalData.air).length,
-        filterByDate(globalData.water).length,
-        filterByDate(globalData.soil).length,
-        filterByDate(globalData.radiation).length
-    ].reduce((a,b)=>a+b,0);
+        // Фільтруємо тільки станції за датою
+        const air = filterByDate(globalData.air);
+        const water = filterByDate(globalData.water);
+        const soil = filterByDate(globalData.soil);
+        const radiation = filterByDate(globalData.radiation);
 
-    if (total === 0) {
-        alert("Немає даних за вибрану дату!");
-        return;
-    }
+        const total = air.length + water.length + soil.length + radiation.length;
+
+        if (total === 0) {
+            alert("Немає даних за вибрану дату!");
+            return;
+        }
+
+        // Перемальовуємо маркери
+        renderMarkers(air, layers.air, "air");
+        renderMarkers(water, layers.water, "water");
+        renderMarkers(soil, layers.soil, "soil");
+        renderMarkers(radiation, layers.radiation, "radiation");
     }
 
 
@@ -256,9 +264,14 @@ document.addEventListener("DOMContentLoaded", function () {
     // 5. Завантаження графіка (Історія / Прогноз)
     // --------------------------------
     function loadChart(type, stationId) {
-        const endpoint = chartMode === "forecast"
-            ? `/api/forecast/${type}/${stationId}/`
-            : `/api/history/${type}/${stationId}/`;
+        let endpoint = "";
+
+        if (chartMode === "forecast") {
+            endpoint = `/api/forecast/${type}/${stationId}/?days=${forecastDays}`;
+        } else {
+            endpoint = `/api/history/${type}/${stationId}/`;
+        }
+
 
         fetch(endpoint)
             .then(r => r.json())
@@ -364,6 +377,31 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    function attachForecastDaysHandlers() {
+        const buttons = document.querySelectorAll("#forecast-days button");
+
+        if (!buttons.length) return;
+
+        buttons.forEach(btn => {
+            btn.addEventListener("click", function () {
+                forecastDays = parseInt(this.dataset.days);
+
+                buttons.forEach(b => {
+                    b.classList.remove("btn-primary", "active");
+                    b.classList.add("btn-outline-secondary");
+                });
+
+                this.classList.remove("btn-outline-secondary");
+                this.classList.add("btn-primary", "active");
+
+                if (chartMode === "forecast" && currentSelection) {
+                    loadChart(currentSelection.type, currentSelection.id);
+                }
+            });
+        });
+    }
+
+
     // --------------------------------
     // 6. Панель станції справа
     // --------------------------------
@@ -416,11 +454,29 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (applyBtn && dateInput) {
         applyBtn.addEventListener("click", () => {
-            selectedDate = dateInput.value || null;
-            renderAllLayers();
-            historyChart && currentSelection && loadChart(currentSelection.type, currentSelection.id);
-        });
+        selectedDate = dateInput.value || null;
+
+        // 🔥 Завантажуємо нові дані з API !!!
+        fetch(`/api/global/?date=${selectedDate || ""}`)
+            .then(res => res.json())
+            .then(data => {
+                globalData = data;
+
+                // Перемальовуємо маркери
+                renderAllLayers();
+
+                // Оновлюємо графік (при необхідності)
+                if (historyChart && currentSelection) {
+                    loadChart(currentSelection.type, currentSelection.id);
+                }
+            })
+            .catch(err => console.error("Помилка /api/global/:", err));
+    });
+
     }
 
     attachChartModeHandlers();
+
+    attachForecastDaysHandlers();
+
 });

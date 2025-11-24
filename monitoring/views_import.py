@@ -8,11 +8,6 @@ from monitoring.water.models import WaterQualityStation, WaterQualityRecord
 from monitoring.soil.models import SoilQualityStation, SoilQualityRecord
 from monitoring.radiation.models import RadiationStation, RadiationRecord
 
-from monitoring.air.ml.train_air import train_air_model
-from monitoring.water.ml.train_water import train_water_model
-from monitoring.soil.ml.train_soil import train_soil_model
-from monitoring.radiation.ml.train_radiation import train_radiation_model
-
 # ================================
 # 🔹 Функція для безпечного округлення
 # ================================
@@ -45,7 +40,7 @@ def upload_csv(request):
 
         if not file:
             return render(request, "monitoring/upload_csv.html",
-                          {"message": "Файл не вибрано!"})
+                        {"message": "Файл не вибрано!"})
 
         decoded = file.read().decode("utf-8").splitlines()
         reader = csv.DictReader(decoded)
@@ -54,10 +49,11 @@ def upload_csv(request):
 
         if monitoring_type is None:
             return render(request, "monitoring/upload_csv.html",
-                          {"message": "Не вдалося визначити тип моніторингу."})
+                        {"message": "Не вдалося визначити тип моніторингу."})
 
         count = 0
 
+        # 🔥 ВАЖЛИВО: цикл має бути тут — всередині POST!
         for row in reader:
 
             # === Очищення полів ===
@@ -71,11 +67,27 @@ def upload_csv(request):
             except:
                 continue
 
+            # === Timestamp ===
             ts = str(row.get("timestamp")).strip()
-            try:
-                timestamp = datetime.fromisoformat(ts)
-            except:
+
+            timestamp = None
+            date_formats = [
+                "%Y-%m-%d %H:%M:%S.%f",
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M",
+                "%Y-%m-%d"
+            ]
+
+            for fmt in date_formats:
+                try:
+                    timestamp = datetime.strptime(ts, fmt)
+                    break
+                except:
+                    pass
+
+            if timestamp is None:
                 timestamp = timezone.now()
+
 
             # ===============================
             # 🌫 AIR
@@ -161,16 +173,6 @@ def upload_csv(request):
                 )
 
             count += 1
-
-        # === Після завершення імпорту — тренуємо модель ===
-        if monitoring_type == "air":
-            train_air_model()
-        elif monitoring_type == "water":
-            train_water_model()
-        elif monitoring_type == "soil":
-            train_soil_model()
-        elif monitoring_type == "radiation":
-            train_radiation_model()
 
         message = f"Файл імпортовано. Додано {count} записів ({monitoring_type}). Модель оновлено."
 

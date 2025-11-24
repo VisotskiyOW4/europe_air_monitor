@@ -41,6 +41,13 @@
                     <button type="button" class="btn btn-outline-primary" data-mode="forecast">Прогноз</button>
                 </div>
 
+                <!-- Вибір горизонту прогнозу -->
+                <div class="btn-group btn-group-sm mb-3" id="forecast-days">
+                    <button type="button" class="btn btn-outline-secondary active" data-days="3">3 дні</button>
+                    <button type="button" class="btn btn-outline-secondary" data-days="7">7 днів</button>
+                    <button type="button" class="btn btn-outline-secondary" data-days="30">30 днів</button>
+                </div>
+
                 <div id="chart-wrapper">
                     <canvas id="historyChart"></canvas>
                 </div>
