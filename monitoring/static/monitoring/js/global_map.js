@@ -185,6 +185,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let chartMode = "history";      // "history" | "forecast"
     let currentSelection = null;    // { type, id, data }
     let forecastDays = 3;
+    let historyDays = 3;
 
     // --------------------------------
     // 4. Завантаження станцій
@@ -263,15 +264,16 @@ document.addEventListener("DOMContentLoaded", function () {
     // --------------------------------
     // 5. Завантаження графіка (Історія / Прогноз)
     // --------------------------------
-    function loadChart(type, stationId) {
+    function loadChart(type, stationId, days = null) {
         let endpoint = "";
 
         if (chartMode === "forecast") {
             endpoint = `/api/forecast/${type}/${stationId}/?days=${forecastDays}`;
         } else {
-            endpoint = `/api/history/${type}/${stationId}/`;
+            // визначаємо скільки днів брати
+            const win = days || historyDays || 3;
+            endpoint = `/api/history/${type}/${stationId}/?window=${win}`;
         }
-
 
         fetch(endpoint)
             .then(r => r.json())
@@ -289,26 +291,11 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (!canvas) return;
                 const ctx = canvas.getContext("2d");
 
-                if (historyChart) {
-                    historyChart.destroy();
-                }
+                if (historyChart) historyChart.destroy();
 
                 const labelName =
                     (PARAM_TITLES[type] && PARAM_TITLES[type][param]) ||
                     param.toUpperCase();
-
-                if (selectedDate) {
-                    const newLabels = [];
-                    const newValues = [];
-                    labels.forEach((ts, i) => {
-                        if (normalizeDate(ts) === selectedDate) {
-                            newLabels.push(ts);
-                            newValues.push(values[i]);
-                        }
-                    });
-                    labels = newLabels;
-                    values = newValues;
-                }
 
                 const isForecast = chartMode === "forecast";
 
@@ -320,7 +307,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             label: labelName + (isForecast ? " (прогноз)" : ""),
                             data: values,
                             borderColor: isForecast ? "#ff5733" : "#007bff",
-                            backgroundColor: isForecast ? "rgba(255, 87, 51, 0.1)" : "rgba(0, 123, 255, 0.1)",
+                            backgroundColor: isForecast ? "rgba(255,87,51,0.1)" : "rgba(0,123,255,0.1)",
                             borderWidth: 2,
                             borderDash: isForecast ? [6, 6] : [],
                             tension: isForecast ? 0.5 : 0.25,
@@ -328,27 +315,14 @@ document.addEventListener("DOMContentLoaded", function () {
                         }]
                     },
                     options: {
-                        maintainAspectRatio: false,
                         responsive: true,
-                        scales: {
-                            y: {
-                                beginAtZero: false,   // Авто масштабування осі Y
-                                ticks: { color: "#333" }
-                            },
-                            x: {
-                                ticks: { maxTicksLimit: 7, color: "#333" }
-                            }
-                        },
-                        plugins: {
-                            legend: { labels: { color: "#000", font: { size: 13 } } },
-                            tooltip: { enabled: true }
-                        }
+                        maintainAspectRatio: false
                     }
                 });
-
             })
             .catch(err => console.error("Помилка завантаження графіка:", err));
     }
+
 
     // Навішуємо обробники на кнопки режиму графіка
     function attachChartModeHandlers() {
@@ -377,30 +351,35 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    function attachForecastDaysHandlers() {
-        const buttons = document.querySelectorAll("#forecast-days button");
-
+    function attachDaysSelectorHandler() {
+        const buttons = document.querySelectorAll("[data-days]");
         if (!buttons.length) return;
 
         buttons.forEach(btn => {
             btn.addEventListener("click", function () {
-                forecastDays = parseInt(this.dataset.days);
+                const days = parseInt(this.dataset.days);
 
+                // стилізація
                 buttons.forEach(b => {
                     b.classList.remove("btn-primary", "active");
                     b.classList.add("btn-outline-secondary");
                 });
-
                 this.classList.remove("btn-outline-secondary");
                 this.classList.add("btn-primary", "active");
 
-                if (chartMode === "forecast" && currentSelection) {
-                    loadChart(currentSelection.type, currentSelection.id);
+                // режим графіка
+                if (chartMode === "history") {
+                    historyDays = days;
+                } else {
+                    forecastDays = days;
+                }
+
+                if (currentSelection) {
+                    loadChart(currentSelection.type, currentSelection.id, days);
                 }
             });
         });
     }
-
 
     // --------------------------------
     // 6. Панель станції справа
@@ -476,7 +455,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     attachChartModeHandlers();
-
-    attachForecastDaysHandlers();
+    attachDaysSelectorHandler();
 
 });

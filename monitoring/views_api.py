@@ -133,7 +133,33 @@ def api_history(request, category, station_id):
     StationModel, RecordModel = model_map[category]
     station = get_object_or_404(StationModel, id=station_id)
 
+    # --- 🔥 новий параметр в API --- 
+    window = int(request.GET.get("window", 30))  # 30 днів за замовчуванням
+
+    last_point = (
+        RecordModel.objects.filter(station=station)
+        .order_by("-timestamp")
+        .first()
+    )
+
+    if not last_point:
+        return JsonResponse({"station": station.name, "history": []})
+
+    start_date = last_point.timestamp - timedelta(days=window)
+
+    records = (
+        RecordModel.objects.filter(station=station, timestamp__gte=start_date)
+        .order_by("timestamp")
+    )
+
+    window = int(request.GET.get("window", 0))
+
     records = RecordModel.objects.filter(station=station).order_by("timestamp")
+
+    if window > 0:
+        from datetime import datetime, timedelta
+        cutoff = datetime.now() - timedelta(days=window)
+        records = records.filter(timestamp__gte=cutoff)
 
     data = []
     for r in records:
@@ -141,148 +167,81 @@ def api_history(request, category, station_id):
         for field in RecordModel._meta.get_fields():
             if field.name not in ["id", "station", "timestamp", "risk_label"]:
                 try:
-                    value = getattr(r, field.name)
-                    if isinstance(value, (int, float)):
-                        entry[field.name] = value
+                    val = getattr(r, field.name)
+                    if isinstance(val, (int, float)):
+                        entry[field.name] = val
                 except:
                     pass
         data.append(entry)
 
     return JsonResponse({"station": station.name, "history": data})
 
-
 # ==============================================================
 #  FORECAST API (LSTM)
 # ==============================================================
 
 def api_forecast(request, category, station_id):
-    """
-    API прогнозу на основі натренованих моделей
-    Підтримує параметр days: ?days=3,7,30
-    """
-
-    # Зчитуємо параметр "days"
-    try:
-        days = int(request.GET.get("days", 3))
-        if days not in [3, 7, 30]:
-            return HttpResponseBadRequest("Invalid 'days' parameter")
-    except:
-        return HttpResponseBadRequest("Invalid 'days' parameter")
-
-    # Відповідність категорій та моделей
     model_map = {
-        "air": {
-            "station": AirQualityStation,
-            "record": AirQualityRecord,
-            "fields": ["pm25", "pm10"],
-            "model": "air_lstm"
-        },
-        "water": {
-            "station": WaterQualityStation,
-            "record": WaterQualityRecord,
-            "fields": ["ph", "nitrates"],
-            "model": "water_gru"
-        },
-        "soil": {
-            "station": SoilQualityStation,
-            "record": SoilQualityRecord,
-            "fields": ["heavy_metals", "pesticides"],
-            "model": "soil_rf"
-        },
-        "radiation": {
-            "station": RadiationStation,
-            "record": RadiationRecord,
-            "fields": ["ambient_dose_rate"],
-            "model": "radiation_lstm"
-        }
+        "air": (AirQualityStation, AirQualityRecord, ["pm25"]),
+        "water": (WaterQualityStation, WaterQualityRecord, ["nitrates"]),
+        "soil": (SoilQualityStation, SoilQualityRecord, ["heavy_metals"]),
+        "radiation": (RadiationStation, RadiationRecord, ["ambient_dose_rate"]),
     }
 
     if category not in model_map:
         return JsonResponse({"error": "Unknown category"}, status=400)
 
-    cfg = model_map[category]
-
-    # Отримуємо станцію та її записи
-    StationModel = cfg["station"]
-    RecordModel = cfg["record"]
-    fields = cfg["fields"]
-
+    StationModel, RecordModel, fields = model_map[category]
     station = get_object_or_404(StationModel, id=station_id)
-    records = RecordModel.objects.filter(station=station).order_by("timestamp")
 
-    if not records.exists():
-        return JsonResponse({"error": "No data for station"}, status=404)
+    # --- новий параметр ---
+    days = int(request.GET.get("days", 7))  # 7 днів за замовчуванням
+    steps = days * 24  # щогодинний прогноз
 
-    # ------------------------------------------------------------
-    # Завантаження моделі та scaler
-    # ------------------------------------------------------------
-    model_name = cfg["model"]
-    model_path = f"monitoring/ml/models/{category}/{model_name}.keras"
-    scaler_path = f"monitoring/ml/models/{category}/{model_name}_scaler.pkl"
+    values = (
+        RecordModel.objects.filter(station=station)
+        .order_by("timestamp")
+        .values_list(fields[0], flat=True)
+    )
 
-    try:
-        model = load_lstm_model(model_path) if "lstm" in model_name else joblib.load(model_path)
-    except Exception as e:
-        return JsonResponse({"error": f"Cannot load model: {e}"} , status=500)
+    values = np.array(values).reshape(-1, 1)
 
-    try:
-        scaler = load_scaler(scaler_path)
-    except:
-        scaler = None
+    if len(values) < 60:
+        return JsonResponse({"error": "Недостатньо даних"}, status=400)
 
-    # ------------------------------------------------------------
-    # Формуємо вектор останніх значень
-    # ------------------------------------------------------------
-    values = np.array([[float(getattr(r, f)) for f in fields] for r in records])
+    # load scaler + model
+    scaler = load_scaler(category)
+    model = load_lstm_model(category)
 
-    # Масштабування
-    if scaler:
-        values_scaled = scaler.transform(values)
-    else:
-        values_scaled = values
+    scaled = scaler.transform(values)
 
-    # ------------------------------------------------------------
-    # Прогноз
-    # ------------------------------------------------------------
-    if "rf" in model_name:  
-        # Random Forest (soil)
-        last_vec = values_scaled[-1]
-        forecasts = []
-        for i in range(days):
-            pred = model.predict([last_vec])[0]
-            last_vec = pred  
-            forecasts.append(pred.tolist())
+    window = scaled[-60:].reshape(1, 60, 1)
 
-    else:
-        # LSTM / GRU
-        X = prepare_lstm_data(values_scaled, seq_len=30)
-        X_last = X[-1].reshape(1, X.shape[1], X.shape[2])
+    preds = []
+    last_ts = (
+        RecordModel.objects.filter(station=station)
+        .order_by("timestamp")
+        .last()
+        .timestamp
+    )
 
-        preds = model.predict(X_last)[0]  # прогноз довжини N
-        forecasts = []
+    timestamps = []
 
-        for i in range(days):
-            idx = min(i, len(preds) - 1)
-            forecasts.append(preds[idx].tolist())
+    for i in range(steps):
+        p = model.predict(window, verbose=0)
+        preds.append(p[0][0])
 
-    # ------------------------------------------------------------
-    # Денормалізація
-    # ------------------------------------------------------------
-    if scaler:
-        forecasts_unscaled = scaler.inverse_transform(forecasts).tolist()
-    else:
-        forecasts_unscaled = forecasts
+        # update sliding window
+        window = np.append(window[:, 1:, :], [[p]], axis=1)
 
-    # ------------------------------------------------------------
-    # Генеруємо майбутні timestamps
-    # ------------------------------------------------------------
-    last_ts = records.last().timestamp
-    timestamps = [(last_ts + timedelta(days=i+1)).isoformat() for i in range(days)]
+        timestamps.append(last_ts + timedelta(hours=i + 1))
+
+    preds = scaler.inverse_transform(np.array(preds).reshape(-1, 1)).flatten()
 
     return JsonResponse({
-        "station": station.name,
-        "fields": fields,
+        "param": fields[0],
         "timestamps": timestamps,
-        "values": forecasts_unscaled
+        "values": preds.tolist(),
     })
+
 
