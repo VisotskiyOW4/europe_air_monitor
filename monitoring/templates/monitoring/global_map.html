@@ -42,8 +42,8 @@
                 </div>
 
                 <!-- Вибір горизонту прогнозу -->
-                <div class="btn-group btn-group-sm mb-3" id="days-selector">
-                    <button type="button" class="btn btn-outline-secondary" data-days="3">3 дні</button>
+                <div class="btn-group btn-group-sm mb-2 w-100" id="days-selector">
+                    <button type="button" class="btn btn-primary active" data-days="3">3 дні</button>
                     <button type="button" class="btn btn-outline-secondary" data-days="7">7 днів</button>
                     <button type="button" class="btn btn-outline-secondary" data-days="30">30 днів</button>
                 </div>
@@ -86,4 +86,7 @@
         </div>
     </div>
 </div>
+{% block extra_js %}
+<script src="{% static 'monitoring/js/global_map.js' %}?v={% now 'U' %}"></script>
+{% endblock %}
 {% endblock %}

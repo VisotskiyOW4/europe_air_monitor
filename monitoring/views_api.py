@@ -1,20 +1,13 @@
-from django.http import JsonResponse, HttpResponseBadRequest
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
+from django.utils.dateparse import parse_date
 from datetime import timedelta
 import numpy as np
-import joblib
-from monitoring.ml.ml_utils import (
-    load_lstm_model,
-    prepare_lstm_data,
-)
-from monitoring.ml.scalers import load_scaler
 
 from monitoring.air.models import AirQualityStation, AirQualityRecord
 from monitoring.water.models import WaterQualityStation, WaterQualityRecord
 from monitoring.soil.models import SoilQualityStation, SoilQualityRecord
 from monitoring.radiation.models import RadiationStation, RadiationRecord
-
-from monitoring.utils.forecast import lstm_forecast
 
 from monitoring.utils.fuzzy_logic import (
     calc_air_risk,
@@ -35,29 +28,21 @@ from monitoring.utils.forecast_ml import (
 # ==============================================================
 
 def api_global(request):
-
     selected_date = request.GET.get("date", None)
-
     result = {"air": [], "water": [], "soil": [], "radiation": []}
 
-    # Універсальна функція пошуку запису по даті/або останнього
     from datetime import datetime
 
     def get_record_by_date(model, station, selected_date):
         qs = model.objects.filter(station=station)
 
-        from datetime import datetime
-
         if selected_date:
             d = None
-
-            # формат YYYY-MM-DD
             try:
                 d = datetime.strptime(selected_date, "%Y-%m-%d").date()
             except:
                 pass
 
-            # формат DD.MM.YYYY
             if d is None:
                 try:
                     d = datetime.strptime(selected_date, "%d.%m.%Y").date()
@@ -65,13 +50,12 @@ def api_global(request):
                     pass
 
             if d:
-                rec = qs.filter(timestamp__date=d).order_by('-timestamp').first()
+                rec = qs.filter(timestamp__date=d).order_by("-timestamp").first()
                 if rec:
                     return rec
 
-        return qs.order_by('-timestamp').first()
+        return qs.order_by("-timestamp").first()
 
-    # Універсальна функція додавання в результат
     def add_data(category, station, record, fields, fuzzy_func):
         data = {f: getattr(record, f) for f in fields}
         fuzzy = fuzzy_func(data)
@@ -86,25 +70,21 @@ def api_global(request):
             "timestamp": record.timestamp,
         })
 
-    # AIR
     for s in AirQualityStation.objects.all():
         r = get_record_by_date(AirQualityRecord, s, selected_date)
         if r:
             add_data("air", s, r, ["pm25", "pm10", "co", "no2", "o3"], calc_air_risk)
 
-    # WATER
     for s in WaterQualityStation.objects.all():
         r = get_record_by_date(WaterQualityRecord, s, selected_date)
         if r:
             add_data("water", s, r, ["ph", "nitrates", "conductivity"], calc_water_risk)
 
-    # SOIL
     for s in SoilQualityStation.objects.all():
         r = get_record_by_date(SoilQualityRecord, s, selected_date)
         if r:
             add_data("soil", s, r, ["heavy_metals", "pesticides", "ph"], calc_soil_risk)
 
-    # RADIATION
     for s in RadiationStation.objects.all():
         r = get_record_by_date(RadiationRecord, s, selected_date)
         if r:
@@ -121,127 +101,120 @@ def api_global(request):
 
 def api_history(request, category, station_id):
     model_map = {
-        "air": (AirQualityStation, AirQualityRecord),
-        "water": (WaterQualityStation, WaterQualityRecord),
-        "soil": (SoilQualityStation, SoilQualityRecord),
-        "radiation": (RadiationStation, RadiationRecord),
+        "air": (AirQualityStation, AirQualityRecord, "pm25"),
+        "water": (WaterQualityStation, WaterQualityRecord, "nitrates"),
+        "soil": (SoilQualityStation, SoilQualityRecord, "heavy_metals"),
+        "radiation": (RadiationStation, RadiationRecord, "ambient_dose_rate"),
     }
 
     if category not in model_map:
         return JsonResponse({"error": "Unknown category"}, status=400)
 
-    StationModel, RecordModel = model_map[category]
+    StationModel, RecordModel, field = model_map[category]
     station = get_object_or_404(StationModel, id=station_id)
 
-    # --- 🔥 новий параметр в API --- 
-    window = int(request.GET.get("window", 30))  # 30 днів за замовчуванням
+    window = int(request.GET.get("window", 7))
+    date_str = request.GET.get("date")
 
-    last_point = (
-        RecordModel.objects.filter(station=station)
-        .order_by("-timestamp")
-        .first()
-    )
+    qs = RecordModel.objects.filter(station=station)
+    if not qs.exists():
+        return JsonResponse({"param": field, "timestamps": [], "values": []})
 
-    if not last_point:
-        return JsonResponse({"station": station.name, "history": []})
+    # end_date
+    if date_str:
+        end_date = parse_date(date_str)
+        if end_date:
+            qs = qs.filter(timestamp__date__lte=end_date)
+        else:
+            end_date = qs.latest("timestamp").timestamp.date()
+    else:
+        end_date = qs.latest("timestamp").timestamp.date()
 
-    start_date = last_point.timestamp - timedelta(days=window)
+    # ✅ Вікно "N днів включно"
+    start_date = end_date - timedelta(days=max(window - 1, 0))
 
-    records = (
-        RecordModel.objects.filter(station=station, timestamp__gte=start_date)
-        .order_by("timestamp")
-    )
+    qs = qs.filter(timestamp__date__gte=start_date).order_by("timestamp")
 
-    window = int(request.GET.get("window", 0))
+    return JsonResponse({
+        "param": field,
+        "timestamps": list(qs.values_list("timestamp", flat=True)),
+        "values": list(qs.values_list(field, flat=True)),
+    })
 
-    records = RecordModel.objects.filter(station=station).order_by("timestamp")
-
-    if window > 0:
-        from datetime import datetime, timedelta
-        cutoff = datetime.now() - timedelta(days=window)
-        records = records.filter(timestamp__gte=cutoff)
-
-    data = []
-    for r in records:
-        entry = {"timestamp": r.timestamp}
-        for field in RecordModel._meta.get_fields():
-            if field.name not in ["id", "station", "timestamp", "risk_label"]:
-                try:
-                    val = getattr(r, field.name)
-                    if isinstance(val, (int, float)):
-                        entry[field.name] = val
-                except:
-                    pass
-        data.append(entry)
-
-    return JsonResponse({"station": station.name, "history": data})
 
 # ==============================================================
-#  FORECAST API (LSTM)
+#  FORECAST API (використовує forecast_ml.py)
 # ==============================================================
 
 def api_forecast(request, category, station_id):
     model_map = {
-        "air": (AirQualityStation, AirQualityRecord, ["pm25"]),
-        "water": (WaterQualityStation, WaterQualityRecord, ["nitrates"]),
-        "soil": (SoilQualityStation, SoilQualityRecord, ["heavy_metals"]),
-        "radiation": (RadiationStation, RadiationRecord, ["ambient_dose_rate"]),
+        "air": (AirQualityStation, AirQualityRecord, "pm25"),
+        "water": (WaterQualityStation, WaterQualityRecord, "nitrates"),
+        "soil": (SoilQualityStation, SoilQualityRecord, "heavy_metals"),
+        "radiation": (RadiationStation, RadiationRecord, "ambient_dose_rate"),
     }
 
     if category not in model_map:
         return JsonResponse({"error": "Unknown category"}, status=400)
 
-    StationModel, RecordModel, fields = model_map[category]
+    StationModel, RecordModel, field = model_map[category]
     station = get_object_or_404(StationModel, id=station_id)
 
-    # --- новий параметр ---
-    days = int(request.GET.get("days", 7))  # 7 днів за замовчуванням
-    steps = days * 24  # щогодинний прогноз
+    days = int(request.GET.get("days", 7))  # 3/7/30
+    points_per_day = 4  # у тебе виміри кожні 6 годин => 4 точки/доба
+    step_hours = 6
 
-    values = (
-        RecordModel.objects.filter(station=station)
-        .order_by("timestamp")
-        .values_list(fields[0], flat=True)
-    )
+    qs = RecordModel.objects.filter(station=station).order_by("timestamp")
 
-    values = np.array(values).reshape(-1, 1)
+    if not qs.exists():
+        return JsonResponse({"error": "Немає даних"}, status=400)
 
-    if len(values) < 60:
-        return JsonResponse({"error": "Недостатньо даних"}, status=400)
+    last_ts = qs.last().timestamp
 
-    # load scaler + model
-    scaler = load_scaler(category)
-    model = load_lstm_model(category)
+    # беремо значення параметра
+    values = list(qs.values_list(field, flat=True))
 
-    scaled = scaler.transform(values)
+    # -------------------------
+    # викликаємо правильний прогноз
+    # -------------------------
+    if category == "air":
+        preds = forecast_air(values, days, points_per_day=points_per_day)
 
-    window = scaled[-60:].reshape(1, 60, 1)
+    elif category == "water":
+        preds = forecast_water(values, days, points_per_day=points_per_day)
 
-    preds = []
-    last_ts = (
-        RecordModel.objects.filter(station=station)
-        .order_by("timestamp")
-        .last()
-        .timestamp
-    )
+    elif category == "radiation":
+        preds = forecast_radiation(values, days, points_per_day=points_per_day)
 
-    timestamps = []
+    elif category == "soil":
+        # для soil твій forecast_soil інший (по днях, не по 6 годинах)
+        last = qs.last()
+        last_index = qs.count() - 1
+        preds = forecast_soil(
+            last_heavy_metals=last.heavy_metals,
+            last_pesticides=last.pesticides,
+            last_index=last_index,
+            days=days,
+        )
+        # timestamps для soil: 1 точка = 1 день
+        timestamps = [last_ts + timedelta(days=i) for i in range(1, len(preds) + 1)]
+        return JsonResponse({
+            "param": "ph",              # якщо в soil прогнозуєш pH
+            "timestamps": timestamps,
+            "values": preds,
+        })
 
-    for i in range(steps):
-        p = model.predict(window, verbose=0)
-        preds.append(p[0][0])
-
-        # update sliding window
-        window = np.append(window[:, 1:, :], [[p]], axis=1)
-
-        timestamps.append(last_ts + timedelta(hours=i + 1))
-
-    preds = scaler.inverse_transform(np.array(preds).reshape(-1, 1)).flatten()
+    # timestamps для air/water/radiation: кожні 6 годин
+    timestamps = [last_ts + timedelta(hours=step_hours * (i + 1)) for i in range(len(preds))]
 
     return JsonResponse({
-        "param": fields[0],
+        "param": field,
         "timestamps": timestamps,
-        "values": preds.tolist(),
+        "values": preds,
+        "meta": {
+            "days": days,
+            "points": len(preds),
+            "step_hours": step_hours,
+            "mode": "forecast_ml"
+        }
     })
-
-

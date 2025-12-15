@@ -5,9 +5,9 @@ function getColorByRisk(risk) {
     if (!risk) return "#999";
 
     const r = risk.toLowerCase();
-    if (r.includes("низь") || r.includes("low")) return "#2ecc71";      // зелений
-    if (r.includes("серед") || r.includes("medium")) return "#f1c40f";  // жовтий
-    if (r.includes("висок") || r.includes("high")) return "#e74c3c";    // червоний
+    if (r.includes("низь") || r.includes("low")) return "#2ecc71";
+    if (r.includes("серед") || r.includes("medium")) return "#f1c40f";
+    if (r.includes("висок") || r.includes("high")) return "#e74c3c";
     return "#7f8c8d";
 }
 
@@ -34,7 +34,6 @@ function getAdvice(type, data) {
     const risk = (data.risk_label || "").toLowerCase();
     const text = [];
 
-    // ---- AIR ----
     if (type === "air") {
         if (risk.includes("висок")) {
             text.push("Уникайте тривалого перебування на вулиці.");
@@ -46,12 +45,10 @@ function getAdvice(type, data) {
         } else {
             text.push("Повітря в нормі. Можна займатися спортом на вулиці.");
         }
-
         if (data.pm25 > 150) text.push("⚠ PM2.5 значно перевищує норму! Дуже шкідливо.");
         if (data.pm10 > 200) text.push("⚠ PM10 перевищує допустимі значення.");
     }
 
-    // ---- WATER ----
     if (type === "water") {
         if (risk.includes("висок")) {
             text.push("Не використовуйте воду без фільтрації.");
@@ -61,14 +58,10 @@ function getAdvice(type, data) {
         } else {
             text.push("Якість води є задовільною.");
         }
-
-        if (data.ph < 6.5 || data.ph > 8.5)
-            text.push("⚠ Показник pH виходить за межі норми.");
-        if (data.nitrates > 50)
-            text.push("⚠ Високий рівень нітратів — небезпечно для здоров'я.");
+        if (data.ph < 6.5 || data.ph > 8.5) text.push("⚠ Показник pH виходить за межі норми.");
+        if (data.nitrates > 50) text.push("⚠ Високий рівень нітратів — небезпечно для здоров'я.");
     }
 
-    // ---- SOIL ----
     if (type === "soil") {
         if (risk.includes("висок")) {
             text.push("Уникайте контакту з ґрунтом.");
@@ -78,14 +71,10 @@ function getAdvice(type, data) {
         } else {
             text.push("Ґрунт у безпечних межах.");
         }
-
-        if (data.heavy_metals > 300)
-            text.push("⚠ Висока концентрація важких металів.");
-        if (data.pesticides > 100)
-            text.push("⚠ Пестициди на небезпечному рівні.");
+        if (data.heavy_metals > 300) text.push("⚠ Висока концентрація важких металів.");
+        if (data.pesticides > 100) text.push("⚠ Пестициди на небезпечному рівні.");
     }
 
-    // ---- RADIATION ----
     if (type === "radiation") {
         if (risk.includes("висок")) {
             text.push("Уникайте перебування на відкритому повітрі.");
@@ -95,47 +84,39 @@ function getAdvice(type, data) {
         } else {
             text.push("Радіаційний фон у межах норми.");
         }
-
-        if (data.ambient_dose_rate > 2.0)
-            text.push("⚠ Високий рівень радіації! Потрібні заходи безпеки.");
+        if (data.ambient_dose_rate > 2.0) text.push("⚠ Високий рівень радіації! Потрібні заходи безпеки.");
     }
 
     return text;
 }
 
 function formatDateShort(ts) {
-        return new Date(ts).toLocaleString("uk-UA", {
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit"
-        }).replace(",", "");
-    }
+    return new Date(ts).toLocaleString("uk-UA", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+    }).replace(",", "");
+}
 
 function normalizeDate(ts) {
     try {
         const d = new Date(ts);
-        if (!isNaN(d.getTime())) {
-            return d.toISOString().split("T")[0]; // YYYY-MM-DD
-        }
-    } catch(e) {}
+        if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
+    } catch (e) {}
     return null;
 }
-
 
 document.addEventListener("DOMContentLoaded", function () {
     const mapElement = document.getElementById("map");
     if (!mapElement) return;
 
-    // --------------------------------
-    // 1. Карта
-    // --------------------------------
+    // -----------------------------
+    // 1) Карта
+    // -----------------------------
     const map = L.map("map").setView([50.45, 30.52], 5);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19
-    }).addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
 
     const layers = {
         air: L.layerGroup(),
@@ -145,141 +126,110 @@ document.addEventListener("DOMContentLoaded", function () {
     };
     layers.air.addTo(map);
 
-    // --------------------------------
-    // 2. Назви параметрів
-    // --------------------------------
+    // -----------------------------
+    // 2) Параметри
+    // -----------------------------
     const PARAM_TITLES = {
-        air: {
-            pm25: "PM2.5",
-            pm10: "PM10",
-            co: "CO",
-            no2: "NO₂",
-            o3: "O₃",
-            risk_label: "Ризик"
-        },
-        water: {
-            ph: "pH",
-            nitrates: "Нітрати",
-            conductivity: "Провідність",
-            risk_label: "Ризик"
-        },
-        soil: {
-            heavy_metals: "Важкі метали",
-            pesticides: "Пестициди",
-            ph: "pH",
-            risk_label: "Ризик"
-        },
-        radiation: {
-            gamma: "Gamma",
-            beta: "Beta",
-            alpha: "Alpha",
-            ambient_dose_rate: "Амб. доза",
-            risk_label: "Ризик"
-        }
+        air: { pm25: "PM2.5", pm10: "PM10", co: "CO", no2: "NO₂", o3: "O₃", risk_label: "Ризик" },
+        water: { ph: "pH", nitrates: "Нітрати", conductivity: "Провідність", risk_label: "Ризик" },
+        soil: { heavy_metals: "Важкі метали", pesticides: "Пестициди", ph: "pH", risk_label: "Ризик" },
+        radiation: { gamma: "Gamma", beta: "Beta", alpha: "Alpha", ambient_dose_rate: "Амб. доза", risk_label: "Ризик" }
     };
 
-    // --------------------------------
-    // 3. Глобальні змінні для графіка
-    // --------------------------------
+    // -----------------------------
+    // 3) Стан
+    // -----------------------------
     let historyChart = null;
-    let chartMode = "history";      // "history" | "forecast"
-    let currentSelection = null;    // { type, id, data }
-    let forecastDays = 3;
-    let historyDays = 3;
-
-    // --------------------------------
-    // 4. Завантаження станцій
-    // --------------------------------
-    let globalData = null;
+    let chartMode = "history";       // history | forecast
+    let currentSelection = null;     // {type, id, data}
+    let daysWindow = 3;              // 3/7/30
     let selectedDate = null;
-    fetch(`/api/global/?date=${selectedDate || ""}`)
-        .then(res => res.json())
-        .then(data => {
-            globalData = data;
-            renderAllLayers();
-        })
-        .catch(err => console.error("Помилка /api/global/:", err));
+    let globalData = null;
 
-    // POPUP
+    // -----------------------------
+    // 4) Global data
+    // -----------------------------
+    function fetchGlobal() {
+        const url = `/api/global/?date=${selectedDate || ""}&_=${Date.now()}`;
+        return fetch(url)
+            .then(res => res.json())
+            .then(data => {
+                globalData = data;
+                renderAllLayers();
+            })
+            .catch(err => console.error("Помилка /api/global/:", err));
+    }
+
     function formatPopup(st, type) {
         let html = `<b>${st.name}</b><br>`;
         for (let key in PARAM_TITLES[type]) {
-            if (st[key] !== undefined) {
-                html += `${PARAM_TITLES[type][key]}: ${st[key]}<br>`;
-            }
+            if (st[key] !== undefined) html += `${PARAM_TITLES[type][key]}: ${st[key]}<br>`;
         }
         html += `<small>${formatDateShort(st.timestamp)}</small>`;
         return html;
     }
 
-    // Маркери
     function renderMarkers(data, layer, type) {
         layer.clearLayers();
-
         data.forEach(st => {
-            const marker = L.marker(
-                [st.lat, st.lon],
-                { icon: makeRiskMarker(getColorByRisk(st.risk_label)) }
-            );
-
+            const marker = L.marker([st.lat, st.lon], { icon: makeRiskMarker(getColorByRisk(st.risk_label)) });
             marker.bindPopup(formatPopup(st, type));
-
             marker.on("click", () => {
-                currentSelection = { type: type, id: st.id, data: st };
+                currentSelection = { type, id: st.id, data: st };
                 updateDetailsPanel(st, type);
                 loadChart(type, st.id);
             });
-
             layer.addLayer(marker);
         });
     }
 
     function filterByDate(records) {
         if (!selectedDate) return records;
-        return records.filter(st => normalizeDate(st.timestamp) == selectedDate);
+        return records.filter(st => normalizeDate(st.timestamp) === selectedDate);
     }
 
     function renderAllLayers() {
-        // Фільтруємо тільки станції за датою
+        if (!globalData) return;
+
         const air = filterByDate(globalData.air);
         const water = filterByDate(globalData.water);
         const soil = filterByDate(globalData.soil);
         const radiation = filterByDate(globalData.radiation);
 
         const total = air.length + water.length + soil.length + radiation.length;
-
         if (total === 0) {
             alert("Немає даних за вибрану дату!");
             return;
         }
 
-        // Перемальовуємо маркери
         renderMarkers(air, layers.air, "air");
         renderMarkers(water, layers.water, "water");
         renderMarkers(soil, layers.soil, "soil");
         renderMarkers(radiation, layers.radiation, "radiation");
     }
 
-
-    // --------------------------------
-    // 5. Завантаження графіка (Історія / Прогноз)
-    // --------------------------------
-    function loadChart(type, stationId, days = null) {
-        let endpoint = "";
-
+    // -----------------------------
+    // 5) Графік
+    // -----------------------------
+    function buildEndpoint(type, stationId) {
         if (chartMode === "forecast") {
-            endpoint = `/api/forecast/${type}/${stationId}/?days=${forecastDays}`;
-        } else {
-            // визначаємо скільки днів брати
-            const win = days || historyDays || 3;
-            endpoint = `/api/history/${type}/${stationId}/?window=${win}`;
+            return `/api/forecast/${type}/${stationId}/?days=${daysWindow}&_=${Date.now()}`;
         }
+        let url = `/api/history/${type}/${stationId}/?window=${daysWindow}&_=${Date.now()}`;
+        if (selectedDate) url += `&date=${selectedDate}`;
+        return url;
+    }
+
+    function loadChart(type, stationId) {
+        if (!type || !stationId) return;
+
+        const endpoint = buildEndpoint(type, stationId);
 
         fetch(endpoint)
             .then(r => r.json())
             .then(data => {
-                let labels = data.timestamps || [];
-                let values = data.values || [];
+                const labels = data.timestamps || [];
+                const values = data.values || [];
                 const param = data.param || "";
 
                 if (!labels.length || !values.length) {
@@ -291,26 +241,21 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (!canvas) return;
                 const ctx = canvas.getContext("2d");
 
-                if (historyChart) historyChart.destroy();
-
-                const labelName =
-                    (PARAM_TITLES[type] && PARAM_TITLES[type][param]) ||
-                    param.toUpperCase();
-
+                const labelName = (PARAM_TITLES[type] && PARAM_TITLES[type][param]) || param.toUpperCase();
                 const isForecast = chartMode === "forecast";
+
+                if (historyChart) historyChart.destroy();
 
                 historyChart = new Chart(ctx, {
                     type: "line",
                     data: {
-                        labels: labels,
+                        labels,
                         datasets: [{
                             label: labelName + (isForecast ? " (прогноз)" : ""),
                             data: values,
-                            borderColor: isForecast ? "#ff5733" : "#007bff",
-                            backgroundColor: isForecast ? "rgba(255,87,51,0.1)" : "rgba(0,123,255,0.1)",
                             borderWidth: 2,
                             borderDash: isForecast ? [6, 6] : [],
-                            tension: isForecast ? 0.5 : 0.25,
+                            tension: 0.25,
                             pointRadius: isForecast ? 0 : 2
                         }]
                     },
@@ -323,104 +268,41 @@ document.addEventListener("DOMContentLoaded", function () {
             .catch(err => console.error("Помилка завантаження графіка:", err));
     }
 
-
-    // Навішуємо обробники на кнопки режиму графіка
-    function attachChartModeHandlers() {
-        const buttons = document.querySelectorAll("#chart-mode-global button");
-        if (!buttons.length) return;
-
-        buttons.forEach(btn => {
-            btn.addEventListener("click", function () {
-                const mode = this.dataset.mode;
-                if (chartMode === mode) return;
-
-                chartMode = mode;
-
-                buttons.forEach(b => {
-                    b.classList.remove("btn-primary", "active");
-                    b.classList.add("btn-outline-primary");
-                });
-
-                this.classList.remove("btn-outline-primary");
-                this.classList.add("btn-primary", "active");
-
-                if (currentSelection) {
-                    loadChart(currentSelection.type, currentSelection.id);
-                }
-            });
-        });
-    }
-
-    function attachDaysSelectorHandler() {
-        const buttons = document.querySelectorAll("[data-days]");
-        if (!buttons.length) return;
-
-        buttons.forEach(btn => {
-            btn.addEventListener("click", function () {
-                const days = parseInt(this.dataset.days);
-
-                // стилізація
-                buttons.forEach(b => {
-                    b.classList.remove("btn-primary", "active");
-                    b.classList.add("btn-outline-secondary");
-                });
-                this.classList.remove("btn-outline-secondary");
-                this.classList.add("btn-primary", "active");
-
-                // режим графіка
-                if (chartMode === "history") {
-                    historyDays = days;
-                } else {
-                    forecastDays = days;
-                }
-
-                if (currentSelection) {
-                    loadChart(currentSelection.type, currentSelection.id, days);
-                }
-            });
-        });
-    }
-
-    // --------------------------------
-    // 6. Панель станції справа
-    // --------------------------------
+    // -----------------------------
+    // 6) Панель справа
+    // -----------------------------
     function updateDetailsPanel(st, type) {
         const box = document.getElementById("station-details");
         if (!box) return;
 
         let html = `<h5 class="fw-bold">${st.name}</h5><ul>`;
-
         for (let key in PARAM_TITLES[type]) {
-            if (st[key] !== undefined) {
-                if (key === "risk_label") {
-                    const color = getColorByRisk(st[key]);
-                    html += `<li><b>${PARAM_TITLES[type][key]}:</b> 
-                        <span style="padding:4px 8px; border-radius:6px; background:${color}; color:white;">
-                        ${st[key]}</span></li>`;
-                } else {
-                    html += `<li><b>${PARAM_TITLES[type][key]}:</b> ${st[key]}</li>`;
-                }
+            if (st[key] === undefined) continue;
+
+            if (key === "risk_label") {
+                const color = getColorByRisk(st[key]);
+                html += `<li><b>${PARAM_TITLES[type][key]}:</b>
+                    <span style="padding:4px 8px; border-radius:6px; background:${color}; color:white;">
+                    ${st[key]}</span></li>`;
+            } else {
+                html += `<li><b>${PARAM_TITLES[type][key]}:</b> ${st[key]}</li>`;
             }
         }
         html += `</ul>`;
 
-        // Рекомендації
         const adv = getAdvice(type, st);
         if (adv.length) {
             html += `<h6 class="mt-3">Рекомендації</h6><ul>`;
-            adv.forEach(a => {
-                html += `<li>${a}</li>`;
-            });
-            html += `</ul>
-                    <div class="text-muted small">${formatDateShort(st.timestamp)}</div>`;
+            adv.forEach(a => html += `<li>${a}</li>`);
+            html += `</ul><div class="text-muted small">${formatDateShort(st.timestamp)}</div>`;
         }
-
         box.innerHTML = html;
     }
 
-    // --------------------------------
-    // 7. Перемикання шарів карти
-    // --------------------------------
+    // -----------------------------
+    // 7) Handlers
+    // -----------------------------
+    // перемикання шару
     document.querySelectorAll("input[name='layer']").forEach(radio => {
         radio.addEventListener("change", function () {
             Object.values(layers).forEach(l => map.removeLayer(l));
@@ -428,33 +310,58 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
-    const dateInput = document.getElementById("global-date");
-    const applyBtn = document.getElementById("apply-global-filter");
+    // перемикання history/forecast
+    document.querySelectorAll("#chart-mode-global button").forEach(btn => {
+        btn.addEventListener("click", function () {
+            const mode = this.dataset.mode;
+            if (!mode || mode === chartMode) return;
 
-    if (applyBtn && dateInput) {
-        applyBtn.addEventListener("click", () => {
-        selectedDate = dateInput.value || null;
+            chartMode = mode;
 
-        // 🔥 Завантажуємо нові дані з API !!!
-        fetch(`/api/global/?date=${selectedDate || ""}`)
-            .then(res => res.json())
-            .then(data => {
-                globalData = data;
+            document.querySelectorAll("#chart-mode-global button").forEach(b => {
+                b.classList.remove("btn-primary", "active");
+                b.classList.add("btn-outline-primary");
+            });
 
-                // Перемальовуємо маркери
-                renderAllLayers();
+            this.classList.remove("btn-outline-primary");
+            this.classList.add("btn-primary", "active");
 
-                // Оновлюємо графік (при необхідності)
-                if (historyChart && currentSelection) {
-                    loadChart(currentSelection.type, currentSelection.id);
-                }
-            })
-            .catch(err => console.error("Помилка /api/global/:", err));
+            if (currentSelection) loadChart(currentSelection.type, currentSelection.id);
+        });
     });
 
+    // кнопки 3/7/30 (одні й ті самі для двох режимів)
+    document.querySelectorAll("[data-days]").forEach(btn => {
+        btn.addEventListener("click", function () {
+            const days = parseInt(this.dataset.days, 10);
+            if (!days) return;
+
+            daysWindow = days;
+
+            document.querySelectorAll("[data-days]").forEach(b => {
+                b.classList.remove("btn-primary", "active");
+                b.classList.add("btn-outline-secondary");
+            });
+
+            this.classList.remove("btn-outline-secondary");
+            this.classList.add("btn-primary", "active");
+
+            if (currentSelection) loadChart(currentSelection.type, currentSelection.id);
+        });
+    });
+
+    // фільтр по даті
+    const dateInput = document.getElementById("global-date");
+    const applyBtn = document.getElementById("apply-global-filter");
+    if (applyBtn && dateInput) {
+        applyBtn.addEventListener("click", () => {
+            selectedDate = dateInput.value || null;
+            fetchGlobal().then(() => {
+                if (currentSelection) loadChart(currentSelection.type, currentSelection.id);
+            });
+        });
     }
 
-    attachChartModeHandlers();
-    attachDaysSelectorHandler();
-
+    // старт
+    fetchGlobal();
 });
